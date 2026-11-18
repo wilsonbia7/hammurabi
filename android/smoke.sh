@@ -59,26 +59,89 @@ if ui | grep -q 'package="com.android.systemui"'; then
   echo "Android asks for screen sharing; tapping Start."
   tap 'resource-id="android:id/button1"' || tap 'text="Start"' || tap 'text="Start now"'
 fi
+# Waits up to $2 seconds for $1 in the app's log.
+seen() {
+  i=0
+  while [ "$i" -lt "$2" ]; do
+    adb logcat -d -v time > logcat.txt
+    grep -q "$1" logcat.txt && return 0
+    sleep 5
+    i=$((i + 5))
+  done
+  return 1
+}
+running() { adb shell dumpsys activity services "$pkg" | grep -q "CaptionService"; }
+log() { grep -E "hammurabi|AndroidRuntime|FATAL" logcat.txt | grep -v "AppsFilter\|WindowManager\|CarrierSvc\|ImsResolver\|Accessibility" | tail -60; }
+
 # Reading under translation on an emulator is slow.
-sleep 90
+if seen "screen: " 240; then echo "Hammurabi's own screen was read."; else echo "Nothing was read off the screen."; fail=1; fi
 echo "---- services ----"
 adb shell dumpsys activity services "$pkg" | grep -E "ServiceRecord|isForeground|types=" | head
 echo "---- overlay windows ----"
 adb shell dumpsys window windows | grep -E "Window\{.*$pkg" | head
-adb logcat -d -v time > logcat.txt
-grep -E "hammurabi|AndroidRuntime|FATAL" logcat.txt | grep -v "AppsFilter\|WindowManager\|CarrierSvc\|ImsResolver" | tail -200
-if grep -q "screen: " logcat.txt; then
-  echo "The screen was read."
+log
+
+echo "---- another app in front ----"
+adb logcat -c
+adb shell am start -W -n "$pkg.test/$pkg.TextActivity"
+if seen "screen: Where did you put the keys" 240; then
+  echo "The other app's English text was read."
 else
-  echo "Nothing was read off the screen."
+  echo "The other app's text was not read."
   fail=1
 fi
-adb shell pidof "$pkg" > /dev/null || { echo "Hammurabi is not running."; fail=1; }
+grep -q "screen: Bug" logcat.txt && { echo "The Turkish text was given on: wrong."; fail=1; }
+log
+running || { echo "Captions stopped."; fail=1; }
 
-adb exec-out screencap -p > screen.png
-if command -v convert > /dev/null; then convert screen.png -resize 360x screen.png; fi
-echo "---- screen.png base64 ----"
-base64 -w 0 screen.png
-echo
-echo "---- end ----"
+echo "---- stop ----"
+adb shell am start -W -n "$pkg/.MainActivity"
+sleep 3
+tap "resource-id=\"$pkg:id/toggle\"" || { echo "No Stop button."; fail=1; }
+sleep 5
+if running; then echo "Still running after Stop."; fail=1; else echo "Stopped."; fi
+adb shell dumpsys display | grep -q "Hammurabi screen" && { echo "The screen capture was left behind."; fail=1; }
+
+echo "---- the Quick Settings tile ----"
+adb logcat -c
+adb shell cmd statusbar add-tile "$pkg/.CaptionTile"
+sleep 2
+adb shell cmd statusbar click-tile "$pkg/.CaptionTile"
+sleep 5
+if ui | grep -q 'package="com.android.systemui"'; then
+  tap 'resource-id="android:id/button1"' || tap 'text="Start"' || tap 'text="Start now"'
+fi
+adb shell cmd statusbar collapse
+adb shell am start -W -n "$pkg.test/$pkg.TextActivity"
+if seen "screen: Where did you put the keys" 240; then echo "Started from the tile, reading."; else echo "The tile did not start reading."; fail=1; fi
+adb shell cmd statusbar click-tile "$pkg/.CaptionTile"
+sleep 5
+if running; then echo "The tile did not stop captions."; fail=1; else echo "Stopped from the tile."; fi
+log
+adb shell pidof "$pkg" > /dev/null || echo "(Hammurabi's process has ended.)"
+adb logcat -d -v time | grep -q "FATAL EXCEPTION.*$pkg\|Process: $pkg" && { echo "Hammurabi crashed."; fail=1; }
+
+adb shell am start -W -n "$pkg.test/$pkg.TextActivity" > /dev/null
+sleep 2
+# The screen, a third of its size, as a PNG in base64 (Python's own zlib: no image tools needed).
+adb exec-out screencap > screen.raw
+python3 - << 'PY'
+import base64, struct, zlib
+raw = open("screen.raw", "rb").read()
+w, h, _ = struct.unpack("<III", raw[:12])
+# Android 9+ adds a colour space word to the header.
+start = len(raw) - w * h * 4
+rows = []
+for y in range(0, h, 3):
+    row = raw[start + y * w * 4 : start + (y + 1) * w * 4]
+    rows.append(b"\0" + b"".join(row[x * 4 : x * 4 + 3] for x in range(0, w, 3)))
+sw, sh = len(range(0, w, 3)), len(rows)
+def chunk(kind, data):
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", sw, sh, 8, 2, 0, 0, 0))
+png += chunk(b"IDAT", zlib.compress(b"".join(rows), 9)) + chunk(b"IEND", b"")
+print("---- screen.png base64 ----")
+print(base64.b64encode(png).decode())
+print("---- end ----")
+PY
 exit $fail

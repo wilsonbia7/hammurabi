@@ -80,7 +80,10 @@ class CaptionService : Service() {
         val source = runCatching { Source.valueOf(intent.getStringExtra(EXTRA_SOURCE)!!) }.getOrDefault(Source.MIC)
         val settings = intent.getStringExtra(EXTRA_SETTINGS) ?: "{}"
         var type = 0
-        if (source == Source.MIC || source == Source.BOTH) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        // The microphone type came in Android 11; Android 10 refuses a type it does not know.
+        if ((source == Source.MIC || source == Source.BOTH) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        }
         if (source != Source.MIC) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
         try {
             startForeground(NOTIFICATION_ID, notification(), type)

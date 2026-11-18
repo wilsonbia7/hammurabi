@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- Another app's text, for CI to check the screen is read while Hammurabi is behind it. -->
+        <activity
+            android:name="dev.menzo.hammurabi.TextActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+    </application>
+</manifest>
