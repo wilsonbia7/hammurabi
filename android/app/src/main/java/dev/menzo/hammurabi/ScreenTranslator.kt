@@ -35,9 +35,10 @@ object ScreenText {
             }
             val last = out[out.length - 1]
             when {
-                // "transla-" + "tion": the hyphen goes; "well-" + "Known" keeps it.
-                last == '-' && out.length >= 2 && out[out.length - 2].isLetter() && line[0].isLowerCase() ->
-                    out.setLength(out.length - 1)
+                // A word broken at the line's end: "transla-" + "tion" loses the hyphen, "well-" + "Known"
+                // keeps it; no space either way.
+                last == '-' && out.length >= 2 && out[out.length - 2].isLetter() ->
+                    if (line[0].isLowerCase()) out.setLength(out.length - 1)
                 // Chinese and Japanese put no spaces between words.
                 closeUp(last) && closeUp(line[0]) -> {}
                 else -> out.append(' ')

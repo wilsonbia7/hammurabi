@@ -3,6 +3,9 @@
     <!-- Follows the phone's light or dark setting; the screen reaches under the bars (Android 15). -->
     <style name="AppTheme" parent="@android:style/Theme.DeviceDefault.DayNight">
         <item name="android:windowBackground">@color/bg</item>
+        <!-- The screen has its own title. -->
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">@bool/light_bars</item>

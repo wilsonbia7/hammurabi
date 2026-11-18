@@ -35,8 +35,9 @@ class TranslationLayerTest {
             assertTrue("the overlay permission", SystemClock.uptimeMillis() < deadline)
             SystemClock.sleep(50)
         }
+        // TextActivity is the test APK's, as another app's would be.
         context.startActivity(
-            Intent(context, TextActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            Intent(instrumentation.context, TextActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         )
         SystemClock.sleep(3_000)
 

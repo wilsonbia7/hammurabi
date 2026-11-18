@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Typeface
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -271,7 +272,9 @@ class TranslationLayer(
     override fun onRead(blocks: List<ScreenTranslator.Block>) {
         view.getLocationOnScreen(at)
         patches.clear()
-        blocks.forEach { patches += Patch(it, mapped(it)) }
+        // Text much taller than most of the screen's is a title: its translation is bold.
+        val usual = blocks.map { it.lineHeight }.sorted().let { if (it.isEmpty()) 0 else it[it.size / 2] }
+        blocks.forEach { patches += Patch(it, mapped(it), bold = it.lineHeight >= usual * 1.3f) }
         if (blocks.isEmpty()) {
             finish(context.getString(R.string.layer_nothing), null)
             return
@@ -392,13 +395,17 @@ class TranslationLayer(
         val pic = picture
         p.background = pic?.let { backgroundOf(it, p.block) } ?: Color.WHITE
         p.foreground = pic?.let { foregroundOf(it, p.block, p.background) } ?: Color.BLACK
-        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = p.foreground }
+        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = p.foreground
+            if (p.bold) typeface = Typeface.DEFAULT_BOLD
+        }
         val pad = dp(3f).toFloat()
         val viewW = (view.width.takeIf { it > 0 } ?: context.resources.displayMetrics.widthPixels).toFloat()
         val viewH = (view.height.takeIf { it > 0 } ?: context.resources.displayMetrics.heightPixels).toFloat()
         val rect = RectF(p.rect)
         val least = Ui.sp(context, 10f)
-        var size = min(p.block.lineHeight * scale * 0.82f, Ui.sp(context, 40f)).coerceAtLeast(least)
+        // A line's box is about its letters' size: the translation starts there and shrinks to fit.
+        var size = min(p.block.lineHeight * scale * 0.9f, Ui.sp(context, 40f)).coerceAtLeast(least)
         var layout: StaticLayout
         while (true) {
             paint.textSize = size
@@ -515,7 +522,7 @@ class TranslationLayer(
         patches.lastOrNull { !it.skip && it.layout != null && !showingOriginal && it.rect.contains(x, y) }
 
     /** A translation's place, colours and text. */
-    private class Patch(val block: ScreenTranslator.Block, val rect: RectF) {
+    private class Patch(val block: ScreenTranslator.Block, val rect: RectF, val bold: Boolean) {
         var background = Color.WHITE
         var foreground = Color.BLACK
         var layout: StaticLayout? = null

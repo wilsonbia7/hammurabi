@@ -102,6 +102,7 @@ echo "---- another app in front, the bubble tapped ----"
 adb logcat -c
 adb shell am start -W -n "$pkg.test/$pkg.TextActivity"
 sleep 3
+echo "In front: $(adb shell dumpsys activity activities | grep -m1 -E 'topResumedActivity|mResumedActivity')"
 [ -n "$at" ] && adb shell input tap $at
 # Models download the first time on an emulator; it is slow.
 if seen "translate: done" 300; then
@@ -111,7 +112,8 @@ else
   echo "The screen was not translated."
   fail=1
 fi
-grep -q "translate: languages.*tr=" logcat.txt || echo "(No Turkish block was told apart.)"
+grep -q "translate: languages.*tr=" logcat.txt || { echo "The Turkish post was not told apart."; fail=1; }
+grep -E "ActivityTaskManager|AndroidRuntime" logcat.txt | grep -v "Accessibility" | head -20
 sleep 2
 # The translated screen, as a PNG in base64 (Python's own zlib: no image tools needed).
 shot() {
