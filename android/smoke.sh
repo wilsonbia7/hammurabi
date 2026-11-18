@@ -16,11 +16,11 @@ echo "---- on-device tests ----"
 adb shell am instrument -w "$pkg.test/androidx.test.runner.AndroidJUnitRunner" > instrument.txt 2>&1
 cat instrument.txt
 grep -q "^OK (" instrument.txt || { echo "On-device tests failed."; fail=1; }
-# How the captions look over the screen, as the overlay test left it.
-if adb shell run-as "$pkg" cat files/overlay.png > overlay.png 2> /dev/null && [ -s overlay.png ]; then
-  echo "---- overlay.png base64 ----"
-  base64 -w 0 overlay.png
-  echo
+# How the captions look over the screen, as the overlay test left it. In lines of 1000: the
+# emulator action's output takes no line of hundreds of kilobytes.
+if adb shell run-as "$pkg" cat files/overlay.jpg > overlay.jpg 2> /dev/null && [ -s overlay.jpg ]; then
+  echo "---- overlay.jpg base64 ----"
+  base64 -w 1000 overlay.jpg
   echo "---- end ----"
 fi
 adb logcat -d -v time | grep -E "hammurabi|AndroidRuntime" | grep -v "AppsFilter\|WindowManager\|CarrierSvc\|ImsResolver" | tail -150
@@ -156,7 +156,9 @@ def chunk(kind, data):
 png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", sw, sh, 8, 2, 0, 0, 0))
 png += chunk(b"IDAT", zlib.compress(b"".join(rows), 9)) + chunk(b"IEND", b"")
 print("---- screen.png base64 ----")
-print(base64.b64encode(png).decode())
+b64 = base64.b64encode(png).decode()
+for i in range(0, len(b64), 1000):
+    print(b64[i : i + 1000])
 print("---- end ----")
 PY
 exit $fail

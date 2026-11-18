@@ -65,6 +65,14 @@ jobs:
         working-directory: android
         run: ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest
 
+      # Signed with app/debug.keystore, as every build is: a new APK installs over the old one.
+      - name: Check the APK's key
+        working-directory: android
+        run: |
+          signer=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$signer" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | tee certs.txt
+          grep -q "CN=Hammurabi Debug" certs.txt
+
       - name: Upload the APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

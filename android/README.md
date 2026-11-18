@@ -50,7 +50,9 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
 The NDK is found through `ANDROID_NDK_HOME`, or under the SDK. CI (`.github/workflows/android.yml`)
-builds the same APK and keeps it as an artifact.
+builds the same APK and keeps it as an artifact. Every build is signed with `app/debug.keystore`, a
+debug key, so a new APK installs over the old one and keeps the downloaded models; a store release
+needs a key of its own.
 
 ## Tests
 

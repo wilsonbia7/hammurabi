@@ -62,7 +62,7 @@ class CaptionOverlayTest {
         instrumentation.runOnMainSync { CaptionBus.emit(JSONObject(final.toString()).put("tr", "Yarın görüşürüz")) }
         until("the translation") { OverlayArea.rect != null }
         assertNotNull(OverlayArea.rect)
-        // A post's translation, longer: how it looks goes to files/overlay.png (CI shows it).
+        // A post's translation, longer: how it looks goes to files/overlay.jpg (CI shows it).
         instrumentation.runOnMainSync {
             CaptionBus.emit(
                 JSONObject().put("t", "final").put("id", 2).put("same", false)
@@ -73,7 +73,7 @@ class CaptionOverlayTest {
         SystemClock.sleep(1_000)
         instrumentation.uiAutomation.takeScreenshot()?.let { shot ->
             val small = Bitmap.createScaledBitmap(shot, shot.width / 3, shot.height / 3, true)
-            File(context.filesDir, "overlay.png").outputStream().use { small.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            File(context.filesDir, "overlay.jpg").outputStream().use { small.compress(Bitmap.CompressFormat.JPEG, 70, it) }
         }
 
         instrumentation.runOnMainSync { overlay.hide() }
