@@ -25,6 +25,18 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        getByName("debug") {
+            // One key for every build, CI's included (each CI machine would make its own): a new APK
+            // installs over the one on the phone and keeps the models it downloaded. A debug key,
+            // not secret; a store release needs its own.
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
