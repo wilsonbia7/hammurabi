@@ -908,6 +908,17 @@ mod tests {
             !got.iter().any(|l| l.contains('#') || l.contains('@')),
             "{got:?}"
         );
+        // Dark mode reads the same.
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let mut read = PageRead::new(tx, Path::new(&dir), 4, "tr").unwrap();
+        read.frame_at(&pic("feed_dark.rgba"), w, h, w * 4, None, 0.0)
+            .unwrap();
+        read.frame_at(&pic("feed_dark.rgba"), w, h, w * 4, None, 0.4)
+            .unwrap();
+        let got = lines(&rx);
+        eprintln!("{got:#?}");
+        assert_eq!(got.len(), 2, "{got:?}");
+        assert!(got[0].starts_with("I can't believe how fast"), "{got:?}");
         // Our own captions, masked, are not read.
         let (tx, rx) = crossbeam_channel::unbounded();
         let mut read = PageRead::new(tx, Path::new(&dir), 4, "tr").unwrap();

@@ -1,7 +1,7 @@
 """Phone screenshots for the ignored test of reading the screen (src/page.rs), 886 by 1920 as the
 app captures a 1080 by 2340 phone: a Facebook-like feed in Turkish with two English posts and a
-Turkish one, the same feed scrolled, an Instagram-like video with a subtitle, and the feed with
-one of our own captions over it. Needs Pillow and NumPy.
+Turkish one, the same feed scrolled and in dark mode, an Instagram-like video with a subtitle, and
+the feed with one of our own captions over it. Needs Pillow and NumPy.
 
     python3 tests/page_pictures.py OUT_DIR
     HAMMURABI_OCR_DIR=<models> HAMMURABI_PAGE_DIR=OUT_DIR cargo test -- --ignored
@@ -122,6 +122,13 @@ def captioned():
 
 out = Path(sys.argv[1])
 out.mkdir(parents=True, exist_ok=True)
-for name, img in [("feed", feed(0)), ("feed_scrolled", feed(120)), ("reel", reel()), ("captioned", captioned())]:
+def dark():
+    """The feed in dark mode: light text on black."""
+    from PIL import ImageOps
+    return ImageOps.invert(feed(0).convert("RGB"))
+
+
+for name, img in [("feed", feed(0)), ("feed_scrolled", feed(120)), ("reel", reel()), ("captioned", captioned()),
+                  ("feed_dark", dark())]:
     (out / f"{name}.rgba").write_bytes(img.convert("RGBA").tobytes())
     img.save(out / f"{name}.png")

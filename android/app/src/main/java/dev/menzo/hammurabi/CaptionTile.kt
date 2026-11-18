@@ -1,5 +1,6 @@
 package dev.menzo.hammurabi
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
@@ -27,6 +28,9 @@ class CaptionTile : TileService() {
         if (isLocked) unlockAndRun { askToStart() } else askToStart()
     }
 
+    // The Intent form, deprecated and refused from Android 14, is the only one before it; it is called
+    // only there.
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     private fun askToStart() {
         val start = Intent(this, StartActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {

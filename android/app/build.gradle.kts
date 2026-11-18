@@ -39,9 +39,8 @@ android {
     }
 
     lint {
-        // The report in the build's log, where CI shows it.
+        // build/reports/lint-results-debug.txt, which CI shows.
         textReport = true
-        textOutput = file("stdout")
         checkReleaseBuilds = false
     }
 }

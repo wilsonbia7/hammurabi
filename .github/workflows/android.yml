@@ -82,13 +82,19 @@ jobs:
       # After the upload: what lint finds does not keep the APK from being tried.
       - name: Lint
         working-directory: android
-        run: ./gradlew --no-daemon lintDebug
+        run: |
+          status=0
+          ./gradlew --no-daemon lintDebug || status=$?
+          cat app/build/reports/lint-results-debug.txt || true
+          exit $status
 
   # The on-device tests and the app as a person uses it, on an emulator: a failure shows here, with
   # Android's log of it.
   opens:
     name: runs on an emulator
     needs: apk
+    # Also when only lint failed: the APKs are uploaded before it.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 50
 
