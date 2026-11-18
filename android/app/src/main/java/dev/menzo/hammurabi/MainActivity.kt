@@ -94,7 +94,12 @@ class MainActivity : Activity() {
         overlay = requireViewById(R.id.overlay)
         showOriginal = requireViewById(R.id.show_original)
         threads = requireViewById(R.id.threads)
-        modelViews = listOf(requireViewById(R.id.label_model), model, requireViewById(R.id.model_note))
+        // Typed: left to infer, the list's array is made a Spinner[] and the labels do not fit in it.
+        modelViews = listOf<View>(
+            requireViewById<TextView>(R.id.label_model),
+            model,
+            requireViewById<TextView>(R.id.model_note),
+        )
         screenNote = requireViewById(R.id.screen_note)
         projectionNote = requireViewById(R.id.projection_note)
         addTile = requireViewById(R.id.add_tile)
