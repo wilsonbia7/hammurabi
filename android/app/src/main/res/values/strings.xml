@@ -5,13 +5,18 @@
     <string name="stop">Stop</string>
     <string name="captions_hint">Captions appear here.</string>
 
-    <string name="label_source">Listen to</string>
+    <string name="label_source">Translate</string>
+    <string name="source_screen">Text on screen (posts, comments, games)</string>
+    <string name="source_system">The phone\'s sound (videos, games)</string>
     <string name="source_mic">Microphone (people near you)</string>
-    <string name="source_system">The phone\'s sound (videos, apps)</string>
-    <string name="source_both">Both</string>
-    <string name="source_screen">Subtitles on screen (videos, games)</string>
-    <string name="screen_note">The subtitles at the bottom of the screen are read and translated; the translation shows at the top. Latin and Chinese letters are read. To read one app only, share that app when Android asks.</string>
+    <string name="source_both">Microphone and the phone\'s sound</string>
+    <string name="screen_note">Foreign text on the screen is read in any app; its translation shows at the bottom, like a film\'s subtitles. Text already in the language you translate into, and apps\' buttons, are skipped. When Android asks, share the entire screen. Latin and Chinese letters are read.</string>
     <string name="projection_note">For the phone\'s sound Android asks to share the screen. Hammurabi only listens; it takes no pictures of the screen.</string>
+    <string name="add_tile">Add a Hammurabi switch to Quick Settings</string>
+    <string name="tile_added">Hammurabi is in Quick Settings: pull down from the top of the screen to turn it on in any app.</string>
+    <string name="tile_manual">Add it by hand: open Quick Settings, tap the pencil, and drag Hammurabi in.</string>
+    <string name="tile_on">On</string>
+    <string name="tile_off">Off</string>
 
     <string name="label_spoken">Language heard or read</string>
     <string name="spoken_auto">Detect</string>
@@ -28,7 +33,7 @@
     <string name="label_threads">Processor cores</string>
     <string name="threads_auto">Auto</string>
     <string name="threads_note">Takes effect when the app starts again.</string>
-    <string name="privacy">Speech is recognized and translated on this phone; the audio never leaves it. The models download once, from Hugging Face.</string>
+    <string name="privacy">What is heard or read is recognized and translated on this phone; neither sound nor pictures of the screen leave it. The models download once, from Hugging Face.</string>
 
     <string name="overlay_title">Captions over other apps</string>
     <string name="overlay_message">To show captions over a video, allow Hammurabi to display over other apps.</string>
@@ -36,17 +41,22 @@
     <string name="overlay_skip">Not now</string>
 
     <string name="need_microphone">Hammurabi needs the microphone permission to listen.</string>
-    <string name="projection_denied">Without screen sharing, the phone\'s sound cannot be heard.</string>
+    <string name="projection_denied">Without screen sharing, neither the screen nor the phone\'s sound can be translated.</string>
     <string name="state_loading">Getting ready…</string>
     <string name="state_running">Listening</string>
+    <string name="state_reading">Reading the screen</string>
     <string name="downloading">Downloading %1$s: %2$d%%</string>
     <string name="downloading_size">Downloading %1$s: %2$d MB</string>
     <string name="loading_model">Loading %s…</string>
     <string name="stats">Hearing takes %1$d ms · %2$s</string>
+    <string name="translated_in">Translating took %d ms</string>
 
     <string name="channel_name">Captions</string>
-    <string name="notification_title">Hammurabi is listening</string>
+    <string name="notification_title">Hammurabi is translating</string>
     <string name="notification_text">Tap to open, or stop here.</string>
+    <string name="stopped">Hammurabi stopped</string>
+    <string name="stopped_with">Hammurabi stopped: %s</string>
+    <string name="silent_app">The app playing does not let its sound be captured. For it, choose \"Text on screen\" (subtitles, captions).</string>
 
     <string name="error_projection">Could not start listening to the phone\'s sound.</string>
     <string name="error_settings">The settings could not be read.</string>

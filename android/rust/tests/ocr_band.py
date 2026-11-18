@@ -1,9 +1,8 @@
-"""Pictures for the ignored OCR tests (src/ocr.rs, src/screen.rs): a two-row subtitle, white with
-a black edge, over a blurred noisy scene. Needs Pillow and NumPy.
+"""A picture for the ignored OCR test (src/ocr.rs): a two-row subtitle, white with a black edge,
+over a blurred noisy scene. Needs Pillow and NumPy.
 
     python3 tests/ocr_band.py OUT_DIR
-    HAMMURABI_OCR_DIR=<models> HAMMURABI_OCR_BAND=OUT_DIR/band.grey \\
-    HAMMURABI_OCR_FRAME=OUT_DIR/frame.rgba cargo test -- --ignored
+    HAMMURABI_OCR_DIR=<models> HAMMURABI_OCR_BAND=OUT_DIR/band.grey cargo test -- --ignored
 """
 import sys
 from pathlib import Path
@@ -29,4 +28,3 @@ def picture(width, height, top):
 out = Path(sys.argv[1])
 out.mkdir(parents=True, exist_ok=True)
 (out / "band.grey").write_bytes(picture(1920, 300, 150).convert("L").tobytes())
-(out / "frame.rgba").write_bytes(picture(1920, 1080, 930).convert("RGBA").tobytes())

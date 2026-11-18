@@ -3,11 +3,12 @@ package dev.menzo.hammurabi
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.StatusBarManager
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.media.projection.MediaProjectionConfig
-import android.media.projection.MediaProjectionManager
+import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -46,6 +47,8 @@ class MainActivity : Activity() {
     private lateinit var threads: Spinner
     private lateinit var modelViews: List<View>
     private lateinit var screenNote: TextView
+    private lateinit var projectionNote: TextView
+    private lateinit var addTile: Button
 
     // Fallbacks for when the engine does not load; `Native.info` replaces them.
     private var sourceLangs = listOf("en", "tr")
@@ -57,6 +60,10 @@ class MainActivity : Activity() {
 
     private var current: Choices? = null
     private var defaultStatusColor = Color.GRAY
+
+    /** The last speech model run and translation, for the line under the status. */
+    private var hearing: String? = null
+    private var translating: String? = null
     private var clearStatus: Runnable? = null
     private var notificationsAsked = false
     private var overlayAsked = false
@@ -89,7 +96,13 @@ class MainActivity : Activity() {
         threads = requireViewById(R.id.threads)
         modelViews = listOf(requireViewById(R.id.label_model), model, requireViewById(R.id.model_note))
         screenNote = requireViewById(R.id.screen_note)
+        projectionNote = requireViewById(R.id.projection_note)
+        addTile = requireViewById(R.id.add_tile)
         defaultStatusColor = statusView.currentTextColor
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            addTile.visibility = View.VISIBLE
+            addTile.setOnClickListener { askToAddTile() }
+        }
 
         val error = Engine.setup(this)
         if (error == null) {
@@ -130,10 +143,10 @@ class MainActivity : Activity() {
         // In the order of `Source`.
         source.adapter = adapter(
             listOf(
-                getString(R.string.source_mic),
-                getString(R.string.source_system),
-                getString(R.string.source_both),
                 getString(R.string.source_screen),
+                getString(R.string.source_system),
+                getString(R.string.source_mic),
+                getString(R.string.source_both),
             ),
         )
         source.setSelection(c.source.ordinal)
@@ -194,10 +207,13 @@ class MainActivity : Activity() {
     private fun updateEnabled() {
         target.isEnabled = translate.isChecked
         translateNote.visibility = if (translate.isChecked) View.VISIBLE else View.GONE
-        // Subtitles on screen use no speech model.
-        val screen = readChoices().source == Source.SCREEN
+        // Reading the screen uses no speech model, and its originals are on screen already.
+        val source = readChoices().source
+        val screen = source == Source.SCREEN
         modelViews.forEach { it.visibility = if (screen) View.GONE else View.VISIBLE }
+        showOriginal.visibility = if (screen) View.GONE else View.VISIBLE
         screenNote.visibility = if (screen) View.VISIBLE else View.GONE
+        projectionNote.visibility = if (source == Source.SYSTEM || source == Source.BOTH) View.VISIBLE else View.GONE
     }
 
     private fun onToggle() {
@@ -206,17 +222,7 @@ class MainActivity : Activity() {
             return
         }
         val c = readChoices()
-        val missing = mutableListOf<String>()
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            // Needed for other apps' sound too.
-            missing += Manifest.permission.RECORD_AUDIO
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationsAsked &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            // The notification is where captions are stopped from another app; captions run without it too.
-            missing += Manifest.permission.POST_NOTIFICATIONS
-        }
+        val missing = Launch.missingPermissions(this, c, notifications = !notificationsAsked)
         if (missing.isNotEmpty()) {
             requestPermissions(missing.toTypedArray(), REQ_PERMISSIONS)
             return
@@ -225,17 +231,8 @@ class MainActivity : Activity() {
             askOverlay()
             return
         }
-        if (c.source != Source.MIC) {
-            val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            // Listening takes the whole screen rather than one app: the sound of every app is then
-            // heard. Subtitles on screen lets the user share one app, whose picture then holds no
-            // captions of ours.
-            val consent = if (c.source != Source.SCREEN && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
-            } else {
-                manager.createScreenCaptureIntent()
-            }
-            startActivityForResult(consent, REQ_PROJECTION)
+        if (c.source.shares) {
+            startActivityForResult(Launch.consent(this), REQ_PROJECTION)
             return
         }
         launch(c, 0, null)
@@ -245,7 +242,9 @@ class MainActivity : Activity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != REQ_PERMISSIONS) return
         notificationsAsked = true
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+        if (!readChoices().source.listens ||
+            checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        ) {
             onToggle()
         } else {
             status(getString(R.string.need_microphone), error = true)
@@ -281,18 +280,29 @@ class MainActivity : Activity() {
     private fun launch(c: Choices, projectionCode: Int, projectionData: Intent?) {
         captions.apply(JSONObject().put("t", "clear"))
         renderCaptions()
-        statsView.text = ""
-        val intent = Intent(this, CaptionService::class.java)
-            .setAction(CaptionService.ACTION_START)
-            .putExtra(CaptionService.EXTRA_SOURCE, c.source.name)
-            .putExtra(CaptionService.EXTRA_SETTINGS, c.settingsJson())
-            .putExtra(CaptionService.EXTRA_OVERLAY, c.overlay && Settings.canDrawOverlays(this))
-            .putExtra(CaptionService.EXTRA_SHOW_ORIGINAL, c.showOriginal)
-        if (projectionData != null) {
-            intent.putExtra(CaptionService.EXTRA_PROJECTION_CODE, projectionCode)
-                .putExtra(CaptionService.EXTRA_PROJECTION_DATA, projectionData)
+        hearing = null
+        translating = null
+        showSpeed()
+        Launch.start(this, c, projectionCode, projectionData)
+    }
+
+    /** Android 13: asks to put Hammurabi's tile in Quick Settings, to turn captions on from any app. */
+    private fun askToAddTile() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        getSystemService(StatusBarManager::class.java).requestAddTileService(
+            ComponentName(this, CaptionTile::class.java),
+            getString(R.string.app_name),
+            Icon.createWithResource(this, R.drawable.ic_notification),
+            mainExecutor,
+        ) { result ->
+            when (result) {
+                StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED,
+                StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED,
+                -> status(getString(R.string.tile_added), ttlMs = 5_000L)
+                StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED -> {}
+                else -> status(getString(R.string.tile_manual), ttlMs = 8_000L)
+            }
         }
-        startForegroundService(intent)
     }
 
     private fun onEvent(event: JSONObject) {
@@ -309,32 +319,35 @@ class MainActivity : Activity() {
         when (e.optString("t")) {
             "state" -> {
                 updateToggle()
-                when (e.optString("state")) {
-                    "loading" -> status(getString(R.string.state_loading))
-                    "running" -> status(getString(R.string.state_running))
-                    "idle" -> {
-                        // An error that ended captions stays readable.
-                        if (statusView.currentTextColor != ERROR) status("")
-                        captions.apply(JSONObject().put("t", "clear"))
-                        renderCaptions()
-                    }
+                if (e.optString("state") == "idle") {
+                    // An error that ended captions stays readable.
+                    if (statusView.currentTextColor != ERROR) status("")
+                    captions.apply(JSONObject().put("t", "clear"))
+                    renderCaptions()
+                    return
                 }
             }
-            "status" -> status(e.optString("text"), e.optString("level") == "error", e.optLong("ttl_ms", 0L))
-            "progress" -> {
-                val name = e.optString("model")
-                val done = e.optLong("done")
-                val total = e.optLong("total", 0L)
-                status(
-                    when {
-                        e.optString("phase") == "loading" -> getString(R.string.loading_model, name)
-                        total > 0 -> getString(R.string.downloading, name, (done * 100 / total).toInt())
-                        else -> getString(R.string.downloading_size, name, done / 1_000_000)
-                    },
-                )
+            "stats" -> {
+                hearing = getString(R.string.stats, e.optInt("asr_ms"), e.optString("device"))
+                showSpeed()
+                return
             }
-            "stats" -> statsView.text = getString(R.string.stats, e.optInt("asr_ms"), e.optString("device"))
+            "translated" -> {
+                translating = getString(R.string.translated_in, e.optLong("ms"))
+                showSpeed()
+                return
+            }
         }
+        // While captions run, the line says what they are made of; before, what is chosen.
+        val running = current?.source
+        StatusText.of(this, e, running)?.let {
+            // Here "Reading the screen" stays while it does.
+            status(it.text, it.error, if (e.optString("state") == "running") 0L else it.ttlMs)
+        }
+    }
+
+    private fun showSpeed() {
+        statsView.text = listOfNotNull(hearing, translating).joinToString(" · ")
     }
 
     private fun status(text: String, error: Boolean = false, ttlMs: Long = 0L) {
@@ -354,7 +367,8 @@ class MainActivity : Activity() {
     }
 
     private fun renderCaptions() {
-        val text = captions.text(sp(24f), sp(17f), showOriginal.isChecked)
+        // What was read off the screen is shown too: here it tells what the reader sees.
+        val text = captions.text(sp(24f), sp(17f), showOriginal.isChecked || current?.source == Source.SCREEN)
         captionsView.text = text.ifEmpty { getString(R.string.captions_hint) }
     }
 

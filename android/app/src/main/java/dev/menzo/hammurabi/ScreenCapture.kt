@@ -13,9 +13,9 @@ import android.util.DisplayMetrics
 import android.view.Display
 
 /**
- * Pictures of the screen for Subtitles on screen, ten a second, handed to the engine
- * (`Native.screenFrame`), which reads the subtitle band of each. The picture follows the screen
- * when it turns, as a video going full screen does.
+ * Pictures of the screen to Translate the screen, a few a second, handed to the engine
+ * (`Native.screenFrame`), which reads those that changed, with where our own captions are in them. The
+ * picture follows the screen when it turns, as a video going full screen does.
  */
 class ScreenCapture(private val context: Context, private val projection: MediaProjection) {
     private val thread = HandlerThread("hm-screen").apply { start() }
@@ -23,6 +23,10 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
     private var reader: ImageReader? = null
     private var display: VirtualDisplay? = null
     private var size = 0 to 0
+
+    /** The picture's pixels per pixel of the screen. */
+    @Volatile
+    private var scale = 1f
 
     /** The shared app's size when the user shares one app (Android 14), else the screen's. */
     private var content: Pair<Int, Int>? = null
@@ -37,7 +41,8 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
             try {
                 reader?.acquireLatestImage()?.use { image ->
                     val plane = image.planes[0]
-                    Native.screenFrame(plane.buffer, image.width, image.height, plane.rowStride)
+                    val m = mask()
+                    Native.screenFrame(plane.buffer, image.width, image.height, plane.rowStride, m[0], m[1], m[2], m[3])
                 }
             } catch (e: IllegalStateException) {
                 // An image went with a reader replaced meanwhile; the next is read.
@@ -73,6 +78,18 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
         }
     }
 
+    /** Where our captions are in the picture, a little wider for their shadow; all 0 while none show. */
+    private fun mask(): IntArray {
+        val r = OverlayArea.rect ?: return IntArray(4)
+        val s = scale
+        return intArrayOf(
+            ((r[0] - MASK_MARGIN) * s).toInt(),
+            ((r[1] - MASK_MARGIN) * s).toInt(),
+            ((r[2] + MASK_MARGIN) * s).toInt() + 1,
+            ((r[3] + MASK_MARGIN) * s).toInt() + 1,
+        )
+    }
+
     private fun open() {
         val metrics = DisplayMetrics()
         val screen = (context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager)
@@ -80,8 +97,9 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
         @Suppress("DEPRECATION")
         screen.getRealMetrics(metrics)
         val (cw, ch) = content ?: (metrics.widthPixels to metrics.heightPixels)
-        // The reader reads bands 1920 wide; a bigger picture would only be more to copy.
+        // Phones' text reads well at 1920 on the long side; a bigger picture would only be more to copy.
         val scale = minOf(1f, MAX_SIDE / maxOf(cw, ch).toFloat())
+        this.scale = scale
         val w = maxOf(1, (cw * scale).toInt())
         val h = maxOf(1, (ch * scale).toInt())
         if (display != null && size == (w to h)) return
@@ -89,7 +107,7 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
         val d = display
         if (d == null) {
             display = projection.createVirtualDisplay(
-                "Hammurabi subtitles", w, h, metrics.densityDpi,
+                "Hammurabi screen", w, h, metrics.densityDpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, fresh.surface, null, handler,
             )
         } else {
@@ -103,8 +121,9 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
     }
 
     private companion object {
-        /** The reader's counts of pictures are set for ten a second (`screen::EVERY`). */
-        const val EVERY_MS = 100L
+        /** The engine reads a picture that keeps changing twice a second at most; this sees a change soon. */
+        const val EVERY_MS = 150L
         const val MAX_SIDE = 1920f
+        const val MASK_MARGIN = 6
     }
 }

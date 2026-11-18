@@ -3,6 +3,9 @@
     <!-- Follows the phone's light or dark setting. -->
     <style name="AppTheme" parent="@android:style/Theme.DeviceDefault.DayNight" />
 
+    <!-- The screen the Quick Settings tile opens to ask for screen sharing: nothing of it shows. -->
+    <style name="Invisible" parent="@android:style/Theme.Translucent.NoTitleBar" />
+
     <style name="Label">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>

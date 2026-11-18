@@ -34,6 +34,14 @@
             android:text="@string/start"
             android:textSize="18sp" />
 
+        <Button
+            android:id="@+id/add_tile"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/add_tile"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/status"
             android:layout_width="match_parent"
@@ -58,8 +66,10 @@
             android:layout_height="wrap_content" />
 
         <TextView
+            android:id="@+id/projection_note"
             style="@style/Note"
-            android:text="@string/projection_note" />
+            android:text="@string/projection_note"
+            android:visibility="gone" />
 
         <TextView
             android:id="@+id/screen_note"

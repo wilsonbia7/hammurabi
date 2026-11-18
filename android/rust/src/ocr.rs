@@ -1,7 +1,7 @@
-//! Text recognition for subtitles read off a phone's screen, where the desktop uses Windows' own
-//! (`screen::ocr`): PaddleOCR's PP-OCRv4 mobile models on ONNX Runtime. The detector finds the
-//! rows of text in the band, the recognizer reads each (Latin and Chinese letters), and where
-//! each letter came out gives the edges of the words the subtitle reader wants.
+//! Text recognition for what is read off a phone's screen (`page`), where the desktop uses
+//! Windows' own (`screen::ocr`): PaddleOCR's PP-OCRv4 mobile models on ONNX Runtime. The detector
+//! finds the rows of text in a picture, the recognizer reads each (Latin and Chinese letters), and
+//! where each letter came out gives the edges of its words.
 
 use std::path::Path;
 
@@ -31,11 +31,45 @@ const MIN_SCORE: f32 = 0.5;
 
 /// A box in the picture, in pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Rect {
-    x0: f32,
-    y0: f32,
-    x1: f32,
-    y1: f32,
+pub struct Rect {
+    pub x0: f32,
+    pub y0: f32,
+    pub x1: f32,
+    pub y1: f32,
+}
+
+/// A row of text the detector found: the box the middle of its letters fills, which tells rows
+/// apart, and that box grown out to the letters' edges, which is read.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Found {
+    pub core: Rect,
+    pub rect: Rect,
+}
+
+impl Found {
+    /// This row in a picture `f` times as large, within its `w` by `h`.
+    pub fn scaled(&self, f: f32, w: usize, h: usize) -> Found {
+        Found {
+            core: self.core.scaled(f, w, h),
+            rect: self.rect.scaled(f, w, h),
+        }
+    }
+}
+
+impl Rect {
+    pub fn h(&self) -> f32 {
+        self.y1 - self.y0
+    }
+
+    /// This box in a picture `f` times as large, within its `w` by `h`.
+    pub fn scaled(&self, f: f32, w: usize, h: usize) -> Rect {
+        Rect {
+            x0: (self.x0 * f).max(0.0),
+            y0: (self.y0 * f).max(0.0),
+            x1: (self.x1 * f).min(w as f32),
+            y1: (self.y1 * f).min(h as f32),
+        }
+    }
 }
 
 pub struct Ocr {
@@ -48,7 +82,8 @@ pub struct Ocr {
 impl Ocr {
     /// The models in `dir`, each run on `threads` cores.
     pub fn new(dir: &Path, threads: usize) -> anyhow::Result<Self> {
-        let env = ort::init().with_name("hammurabi-ocr").build()?;
+        // The engine's voice detector runs on the same: ort allows one per process.
+        let env = hammurabi::onnx::env()?;
         let open = |file: &str| -> anyhow::Result<Session> {
             Session::builder(&env)?
                 .with_intra_threads(threads.max(1))
@@ -69,44 +104,30 @@ impl Ocr {
     }
 
     /// The rows of text in a picture of one byte a pixel, `width` by `height`.
+    #[cfg(test)]
     pub fn read(&mut self, grey: &[u8], width: usize, height: usize) -> anyhow::Result<Vec<Line>> {
-        self.read_in(grey, grey, width, height)
-    }
-
-    /// The rows of text found in `find` as read in `read`, two pictures of the same size: the
-    /// reader's prepared picture keeps only the subtitle's letters but thins some strokes away
-    /// (a t loses its bar), which Windows' recognizer reads through and this one does not.
-    pub fn read_in(
-        &mut self,
-        find: &[u8],
-        read: &[u8],
-        width: usize,
-        height: usize,
-    ) -> anyhow::Result<Vec<Line>> {
         anyhow::ensure!(
-            find.len() >= width * height && read.len() >= width * height,
+            grey.len() >= width * height,
             "picture smaller than its size"
         );
         if width < 8 || height < 8 {
             return Ok(Vec::new());
         }
         let mut lines = Vec::new();
-        for mut r in self.detect(find, width, height)? {
-            if !std::ptr::eq(find, read) {
-                // A full stop or a question mark's dot can be thinned out of `find` too: half a
-                // row's height more on each side reads them in `read`.
-                let more = 0.5 * (r.y1 - r.y0);
-                r.x0 = (r.x0 - more).max(0.0);
-                r.x1 = (r.x1 + more).min(width as f32);
-            }
-            if let Some(line) = self.recognize(read, width, r)? {
+        for found in self.detect(grey, width, height)? {
+            if let Some(line) = self.recognize(grey, width, found.rect)? {
                 lines.push(line);
             }
         }
         Ok(join_rows(lines))
     }
 
-    fn detect(&mut self, grey: &[u8], w: usize, h: usize) -> anyhow::Result<Vec<Rect>> {
+    /// Where rows of text are in a picture of one byte a pixel, `w` by `h`, top to bottom.
+    pub fn detect(&mut self, grey: &[u8], w: usize, h: usize) -> anyhow::Result<Vec<Found>> {
+        anyhow::ensure!(grey.len() >= w * h, "picture smaller than its size");
+        if w < 8 || h < 8 {
+            return Ok(Vec::new());
+        }
         // Sides a multiple of 32, padded with black.
         let (pw, ph) = (w.div_ceil(32) * 32, h.div_ceil(32) * 32);
         let plane = pw * ph;
@@ -126,7 +147,16 @@ impl Ocr {
         Ok(regions(prob, pw, w, h))
     }
 
-    fn recognize(&mut self, grey: &[u8], w: usize, r: Rect) -> anyhow::Result<Option<Line>> {
+    /// The row of text in `r`, a box of a picture `w` wide; None when nothing is read in it with
+    /// some confidence.
+    pub fn recognize(&mut self, grey: &[u8], w: usize, r: Rect) -> anyhow::Result<Option<Line>> {
+        let h = grey.len() / w.max(1);
+        let r = Rect {
+            x0: r.x0.max(0.0),
+            y0: r.y0.max(0.0),
+            x1: r.x1.min(w as f32),
+            y1: r.y1.min(h as f32),
+        };
         let (x0, y0) = (r.x0 as usize, r.y0 as usize);
         let (bw, bh) = (
             (r.x1 as usize).saturating_sub(x0),
@@ -169,7 +199,7 @@ impl Ocr {
 }
 
 /// The text regions of the detector's map (`pw` wide), within the `w` by `h` picture.
-fn regions(prob: &[f32], pw: usize, w: usize, h: usize) -> Vec<Rect> {
+fn regions(prob: &[f32], pw: usize, w: usize, h: usize) -> Vec<Found> {
     // Text pixels, grown by one to the right and down (PaddleOCR's dilation) so the parts of a
     // letter stay together.
     let mut text = vec![false; w * h];
@@ -227,16 +257,24 @@ fn regions(prob: &[f32], pw: usize, w: usize, h: usize) -> Vec<Rect> {
         }
         // The map marks the middle of letters; grown by area / perimeter, as PaddleOCR does.
         let d = (bw * bh) as f32 * UNCLIP / (2 * (bw + bh)) as f32;
-        out.push(Rect {
-            x0: (x0 as f32 - d).max(0.0),
-            y0: (y0 as f32 - d).max(0.0),
-            x1: (x1 as f32 + d).min(w as f32),
-            y1: (y1 as f32 + d).min(h as f32),
+        out.push(Found {
+            core: Rect {
+                x0: x0 as f32,
+                y0: y0 as f32,
+                x1: x1 as f32,
+                y1: y1 as f32,
+            },
+            rect: Rect {
+                x0: (x0 as f32 - d).max(0.0),
+                y0: (y0 as f32 - d).max(0.0),
+                x1: (x1 as f32 + d).min(w as f32),
+                y1: (y1 as f32 + d).min(h as f32),
+            },
         });
     }
     out.sort_by(|a, b| {
-        (a.y0, a.x0)
-            .partial_cmp(&(b.y0, b.x0))
+        (a.rect.y0, a.rect.x0)
+            .partial_cmp(&(b.rect.y0, b.rect.x0))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     out
@@ -298,8 +336,8 @@ fn decode(probs: &[f32], steps: usize, classes: usize, chars: &[String], r: Rect
     })
 }
 
-/// Pieces of one row (the detector splits a row at a wide gap) as one line, as Windows' reader
-/// gives them.
+/// Pieces of one row (the detector splits a row at a wide gap) as one line.
+#[cfg(test)]
 fn join_rows(mut lines: Vec<Line>) -> Vec<Line> {
     lines.sort_by(|a, b| (a.y0 + a.y1).total_cmp(&(b.y0 + b.y1)));
     let mut rows: Vec<Line> = Vec::new();
@@ -373,8 +411,17 @@ mod tests {
         let r = regions(&prob, pw, w, h);
         assert_eq!(r.len(), 1);
         // Dilation adds a pixel right and down; then grown by 41 * 11 * 1.6 / 104 = 6.9.
+        assert_eq!(
+            r[0].core,
+            Rect {
+                x0: 10.0,
+                y0: 10.0,
+                x1: 51.0,
+                y1: 21.0
+            }
+        );
         assert!(
-            (r[0].x0 - 3.06).abs() < 0.1 && (r[0].y1 - 27.94).abs() < 0.1,
+            (r[0].rect.x0 - 3.06).abs() < 0.1 && (r[0].rect.y1 - 27.94).abs() < 0.1,
             "{:?}",
             r[0]
         );

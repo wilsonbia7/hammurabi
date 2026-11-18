@@ -9,6 +9,7 @@ import android.text.style.AbsoluteSizeSpan
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import org.json.JSONObject
+import java.text.Normalizer
 
 /** Engine events, handed out on the main thread to whoever shows them. */
 object CaptionBus {
@@ -27,17 +28,23 @@ object CaptionBus {
 
     fun emit(event: JSONObject) {
         val t = event.optString("t")
-        if (t == "state" || t == "status" || t == "stats" || t == "progress") last[t] = event
+        if (t == "state" || t == "status" || t == "stats" || t == "translated" || t == "progress") last[t] = event
         listeners.toList().forEach { it(event) }
     }
 }
 
 /**
  * The captions on screen: the last few sentences and the one still being heard, kept as the desktop
- * overlay keeps them (2 cues, each up to 4 s after it last changed).
+ * overlay keeps them (2 cues), each long enough to read after it last changed: [holdMs] at least.
  */
 class Captions(private val cues: Int = 2, private val holdMs: Long = 4_000) {
-    private class Cue(val original: String, val translated: String?, val same: Boolean, val at: Long)
+    private class Cue(val original: String, val translated: String?, val same: Boolean, val at: Long) {
+        /** A second and a half, and 60 ms a letter: about how long a translated post takes to read. */
+        fun hold(least: Long) = (1_500L + 60L * (translated ?: original).length).coerceIn(least, MAX_HOLD_MS)
+
+        /** The translation, when there is one that says it in other words than the original. */
+        val translation get() = translated?.takeIf { !same && !alike(it, original) }
+    }
 
     private val finals = LinkedHashMap<Long, Cue>()
     private var live: Cue? = null
@@ -68,16 +75,24 @@ class Captions(private val cues: Int = 2, private val holdMs: Long = 4_000) {
 
     /**
      * The text to draw: each translation large with its original small under it, or the original large
-     * when there is no translation (yet) or it already is in the target language. Empty = nothing to show.
+     * when there is no translation (yet) or it already is in the target language. [translatedOnly]: only the
+     * translations, for text read off the screen, whose original is on screen already. Empty = nothing to show.
      */
-    fun text(bigPx: Int, smallPx: Int, showOriginal: Boolean, now: Long = SystemClock.uptimeMillis()): CharSequence {
-        finals.values.removeAll { now - it.at > holdMs }
+    fun text(
+        bigPx: Int,
+        smallPx: Int,
+        showOriginal: Boolean,
+        translatedOnly: Boolean = false,
+        now: Long = SystemClock.uptimeMillis(),
+    ): CharSequence {
+        finals.values.removeAll { now - it.at > it.hold(holdMs) }
         val out = SpannableStringBuilder()
         for (c in finals.values + listOfNotNull(live)) {
-            if (c.translated != null && !c.same) {
-                line(out, c.translated, bigPx, Color.WHITE, bold = true)
-                if (showOriginal) line(out, c.original, smallPx, ORIGINAL, bold = false)
-            } else {
+            val translation = c.translation
+            if (translation != null) {
+                line(out, translation, bigPx, Color.WHITE, bold = true)
+                if (showOriginal && !translatedOnly) line(out, c.original, smallPx, ORIGINAL, bold = false)
+            } else if (!translatedOnly) {
                 line(out, c.original, bigPx, Color.WHITE, bold = true)
             }
         }
@@ -96,5 +111,25 @@ class Captions(private val cues: Int = 2, private val holdMs: Long = 4_000) {
     private companion object {
         /** The desktop's colour for originals (`CaptionStyle::orig_color`). */
         val ORIGINAL = Color.parseColor("#ffe066")
+        const val MAX_HOLD_MS = 12_000L
+
+        /**
+         * Whether a translation only repeats its original: text that was in the target language already, as
+         * the screen's own (a recognizer reads it without some letters, which the translation puts back).
+         */
+        fun alike(a: String, b: String): Boolean {
+            val (x, y) = key(a) to key(b)
+            if (x == y) return true
+            val pairs = { s: String -> s.windowed(2).groupingBy { it }.eachCount() }
+            val (px, py) = pairs(x) to pairs(y)
+            val both = px.entries.sumOf { (k, n) -> minOf(n, py[k] ?: 0) }
+            val all = maxOf(1, x.length - 1) + maxOf(1, y.length - 1)
+            return 2.0 * both / all >= 0.8
+        }
+
+        /** Letters and digits, lower case, without accents: "Çok güzel!" and "Cok guzel" alike. */
+        private fun key(s: String): String =
+            Normalizer.normalize(s.lowercase().replace('ı', 'i'), Normalizer.Form.NFD)
+                .filter { it.isLetterOrDigit() }
     }
 }

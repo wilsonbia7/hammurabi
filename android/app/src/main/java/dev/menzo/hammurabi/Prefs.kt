@@ -4,22 +4,28 @@ import android.content.Context
 import org.json.JSONObject
 import java.util.Locale
 
-/** What to listen to. */
+/** What to translate, in the order the main screen offers it. */
 enum class Source(val engineName: String) {
-    /** People talking near the phone. */
-    MIC("Microphone"),
+    /** Translate the screen: text anywhere on it (posts, comments, subtitles), read instead of listened to. */
+    SCREEN("System"),
 
     /** What other apps play: videos, music, games. Calls, and apps that forbid it, stay unheard. */
     SYSTEM("System"),
-    BOTH("Both"),
 
-    /** Subtitles on screen: a video's or a game's own subtitles, read instead of listened to. */
-    SCREEN("System"),
+    /** People talking near the phone. */
+    MIC("Microphone"),
+    BOTH("Both");
+
+    /** Listens rather than reads, with a speech model; needs the microphone permission (other apps' sound too). */
+    val listens get() = this != SCREEN
+
+    /** Needs screen sharing: to read the screen, or to hear what other apps play. */
+    val shares get() = this != MIC
 }
 
 /** The choices on the main screen, kept between launches. */
 data class Choices(
-    val source: Source = Source.MIC,
+    val source: Source = Source.SCREEN,
     /** Null = recognise the language. */
     val spoken: String? = null,
     val translate: Boolean = true,
@@ -42,7 +48,17 @@ data class Choices(
         .put("model", model)
         // Whisper's 30 s window cut to the speech: much faster on a processor.
         .put("trim_audio", true)
+        // The engine's own messages (an error, "reading the screen") in the phone's language, where it has them.
+        .put("ui_language", engineLanguage())
         .toString()
+
+    private fun engineLanguage() = when (Locale.getDefault().language) {
+        "tr" -> "tr"
+        "es" -> "es"
+        "pt" -> "pt-BR"
+        "zh" -> "zh-Hans"
+        else -> "en"
+    }
 }
 
 object Prefs {

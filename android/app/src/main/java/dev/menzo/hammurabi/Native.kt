@@ -26,8 +26,20 @@ object Native {
     /** 16-bit mono audio as recorded; [system] = other apps' sound rather than the microphone. */
     @JvmStatic external fun feed(samples: ShortArray, count: Int, sampleRate: Int, system: Boolean): Boolean
 
-    /** A picture of the screen as an ImageReader gives it (RGBA rows), for Subtitles on screen. */
-    @JvmStatic external fun screenFrame(frame: ByteBuffer, width: Int, height: Int, rowStride: Int): Boolean
+    /**
+     * A picture of the screen as an ImageReader gives it (RGBA rows), to Translate the screen. The mask (in the
+     * picture's pixels; all 0 for none) is where our own captions are, which are not read.
+     */
+    @JvmStatic external fun screenFrame(
+        frame: ByteBuffer,
+        width: Int,
+        height: Int,
+        rowStride: Int,
+        maskLeft: Int,
+        maskTop: Int,
+        maskRight: Int,
+        maskBottom: Int,
+    ): Boolean
 
     /** The next event as JSON, or null when none came within [timeoutMs]. */
     @JvmStatic external fun poll(timeoutMs: Int): String?

@@ -1,10 +1,11 @@
 //! The Android app's way into Hammurabi (android/app, `Native.kt`): one engine at a time, fed with
-//! the audio the app records, or with the subtitles read off the screen pictures it captures
-//! (`Engine::spawn_fed_screen`), and read back as JSON events. Captions use the JSON of the
-//! desktop's browser source (`ui::web`), so the same drawing code can read both.
+//! the audio the app records, or with the text read off the screen pictures it captures
+//! (`page`, `Engine::spawn_fed_screen`), and read back as JSON events. Captions use the JSON of
+//! the desktop's browser source (`ui::web`), so the same drawing code can read both.
 
+mod lang;
 mod ocr;
-mod screen;
+mod page;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, Once, OnceLock};
@@ -37,9 +38,9 @@ struct Session {
 }
 
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
-/// Reading subtitles off the screen, while Subtitles on screen runs: apart from `SESSION`, since
-/// a picture takes the recognizer tens of milliseconds and audio and events must not wait.
-static SCREEN: Mutex<Option<screen::ScreenRead>> = Mutex::new(None);
+/// Reading the screen, while Translate the screen runs: apart from `SESSION`, since a picture
+/// takes the recognizer a while and events must not wait.
+static SCREEN: Mutex<Option<page::PageRead>> = Mutex::new(None);
 /// The app's files folder (`setup`).
 static FILES: OnceLock<PathBuf> = OnceLock::new();
 
@@ -47,7 +48,7 @@ fn session() -> MutexGuard<'static, Option<Session>> {
     SESSION.lock().unwrap_or_else(|p| p.into_inner())
 }
 
-fn screen_read() -> MutexGuard<'static, Option<screen::ScreenRead>> {
+fn screen_read() -> MutexGuard<'static, Option<page::PageRead>> {
     SCREEN.lock().unwrap_or_else(|p| p.into_inner())
 }
 
@@ -182,6 +183,9 @@ pub extern "system" fn Java_dev_menzo_hammurabi_Native_reconfigure<'local>(
             let json = settings.try_to_string(env)?;
             match parse_settings(&json) {
                 Ok(s) => {
+                    if let Some(read) = screen_read().as_mut() {
+                        read.set_target(&s.target_language);
+                    }
                     if let Some(session) = session().as_mut() {
                         hammurabi::i18n::set(s.ui_language);
                         session.target = s.target_language.clone();
@@ -203,8 +207,7 @@ fn parse_settings(json: &str) -> anyhow::Result<Settings> {
     }
     s.speak = false;
     s.browser_source = false;
-    // The translation goes in the caption box: covering the subtitle needs the picture of the
-    // app alone, which a phone gives only when the user shares a single app.
+    // The translation goes in the caption box: what is read can be anywhere on the screen.
     s.screen_cover = false;
     Ok(s)
 }
@@ -221,12 +224,7 @@ fn start(settings: Settings) {
     let target = settings.target_language.clone();
     if settings.asr_backend == AsrBackend::ScreenText {
         let threads = std::thread::available_parallelism().map_or(2, |n| n.get().min(4));
-        match screen::ScreenRead::new(
-            fed.screen.clone(),
-            settings.screen_area(),
-            &ocr_dir(),
-            threads,
-        ) {
+        match page::PageRead::new(fed.screen.clone(), &ocr_dir(), threads, &target) {
             Ok(read) => *screen_read() = Some(read),
             Err(e) => {
                 let _ = fed
@@ -297,10 +295,12 @@ fn feed(chunk: AudioChunk) -> bool {
     }
 }
 
-/// `Native.screenFrame(frame, width, height, rowStride)`: a picture of the screen as an
-/// ImageReader gives it (a direct buffer of RGBA rows), while Subtitles on screen runs. False
+/// `Native.screenFrame(frame, width, height, rowStride, maskLeft, maskTop, maskRight,
+/// maskBottom)`: a picture of the screen as an ImageReader gives it (a direct buffer of RGBA
+/// rows), while Translate the screen runs, and where our captions are in it (all 0: none). False
 /// when nothing reads pictures now.
 #[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_dev_menzo_hammurabi_Native_screenFrame<'local>(
     mut unowned: EnvUnowned<'local>,
     _class: JClass<'local>,
@@ -308,6 +308,10 @@ pub extern "system" fn Java_dev_menzo_hammurabi_Native_screenFrame<'local>(
     width: jint,
     height: jint,
     row_stride: jint,
+    mask_left: jint,
+    mask_top: jint,
+    mask_right: jint,
+    mask_bottom: jint,
 ) -> jboolean {
     unowned
         .with_env(|env| -> jni::errors::Result<jboolean> {
@@ -326,17 +330,19 @@ pub extern "system" fn Java_dev_menzo_hammurabi_Native_screenFrame<'local>(
             // SAFETY: a direct buffer's memory stays valid while the Java call that passed it
             // runs (the image stays open until this returns), and is only read here.
             let rgba = unsafe { std::slice::from_raw_parts(ptr.cast_const(), len) };
-            Ok(screen_frame(rgba, w, h, stride))
+            let mask = (mask_right > mask_left && mask_bottom > mask_top)
+                .then(|| [mask_left, mask_top, mask_right, mask_bottom].map(|v| v as f32));
+            Ok(screen_frame(rgba, w, h, stride, mask))
         })
         .resolve::<ThrowRuntimeExAndDefault>()
 }
 
-fn screen_frame(rgba: &[u8], w: usize, h: usize, stride: usize) -> bool {
+fn screen_frame(rgba: &[u8], w: usize, h: usize, stride: usize, mask: Option<[f32; 4]>) -> bool {
     let mut guard = screen_read();
     let Some(read) = guard.as_mut() else {
         return false;
     };
-    if let Err(e) = read.frame(rgba, w, h, stride) {
+    if let Err(e) = read.frame(rgba, w, h, stride, mask) {
         // The engine has been told, stops, and says why.
         log::error!("screen: {e:#}");
         *guard = None;
@@ -495,7 +501,7 @@ fn event_json(ev: EngineEvent, target: &str) -> Option<Value> {
             json!({"t": "stats", "asr_ms": asr_ms, "device": device})
         }
         EngineEvent::Translated { ms } => json!({"t": "translated", "ms": ms}),
-        // Read aloud is off here, and subtitles are not read off the screen (yet).
+        // Read aloud is off here, and translations do not cover what was read on the screen.
         EngineEvent::Speech(_) | EngineEvent::Place(_) => return None,
     })
 }
