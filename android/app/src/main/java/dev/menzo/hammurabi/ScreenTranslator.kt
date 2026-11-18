@@ -61,6 +61,13 @@ object ScreenText {
     }
 
     /**
+     * Too short for its language to be told on its own (a name, a button): fewer than three words or 16
+     * letters. It takes the screen's language.
+     */
+    fun isShort(text: String): Boolean =
+        text.count { it.isLetter() } < 16 || text.trim().split(Regex("\\s+")).size < 3
+
+    /**
      * The language most of the screen's text is in, by letters, for blocks too short to tell on their own;
      * null when that is [target] (nothing to translate) or none is known.
      */
@@ -179,11 +186,19 @@ class ScreenTranslator(
         val blocks = blocks(text, skipTop)
         AppLog.i("translate: read ${blocks.size} blocks in ${SystemClock.uptimeMillis() - start} ms (${picture.width}x${picture.height})")
         post { listener.onRead(blocks) }
+        // Long blocks tell their language; short ones (names, buttons) take the screen's, else a name could
+        // pass for French and download a model for nothing.
         for (b in blocks) {
             if (cancelled) return
-            b.lang = identify(b.text)
+            b.lang = if (ScreenText.isShort(b.text)) ScreenText.UNDETERMINED else identify(b.text)
         }
-        val dominant = ScreenText.dominant(blocks.map { (it.lang ?: ScreenText.UNDETERMINED) to it.text.length }, target)
+        val told = blocks.filter { it.lang != ScreenText.UNDETERMINED }
+        val dominant = if (told.isNotEmpty()) {
+            ScreenText.dominant(told.map { it.lang!! to it.text.length }, target)
+        } else {
+            // Only short text (a game's menu): together, it tells its language.
+            identify(blocks.joinToString(". ") { it.text }).takeIf { it != ScreenText.UNDETERMINED && it != target }
+        }
         for (b in blocks) if (b.lang == ScreenText.UNDETERMINED && dominant != null) b.lang = dominant
         val same = blocks.count { it.lang == target }
         val unsupported = blocks.mapNotNull { it.lang }
@@ -211,7 +226,10 @@ class ScreenTranslator(
             for (b in group) {
                 if (cancelled) return
                 try {
-                    b.translation = Translations.translate(b.text, lang, target)
+                    val t = Translations.translate(b.text, lang, target)
+                    // The same words back (a name, a brand): nothing to cover.
+                    if (Captions.alike(t, b.text)) continue
+                    b.translation = t
                     translated++
                     post { listener.onTranslated(b) }
                 } catch (e: Exception) {

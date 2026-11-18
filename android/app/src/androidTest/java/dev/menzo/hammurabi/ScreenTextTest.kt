@@ -36,6 +36,15 @@ class ScreenTextTest {
     }
 
     @Test
+    fun namesAndButtonsAreTooShortToTellTheirLanguage() {
+        assertTrue(ScreenText.isShort("John Carter"))
+        assertTrue(ScreenText.isShort("Follow"))
+        assertTrue(ScreenText.isShort("Wed, Nov 18"))
+        assertFalse(ScreenText.isShort("Where did you put the keys?"))
+        assertFalse(ScreenText.isShort("Bugün arkadaşlarla harika bir akşam geçirdik."))
+    }
+
+    @Test
     fun theScreensLanguageIsWhatMostOfItIsIn() {
         val langs = listOf("en" to 120, "und" to 400, "tr" to 40, "en" to 30)
         assertEquals("en", ScreenText.dominant(langs, "tr"))

@@ -404,8 +404,9 @@ class TranslationLayer(
         val viewH = (view.height.takeIf { it > 0 } ?: context.resources.displayMetrics.heightPixels).toFloat()
         val rect = RectF(p.rect)
         val least = Ui.sp(context, 10f)
-        // A line's box is about its letters' size: the translation starts there and shrinks to fit.
-        var size = min(p.block.lineHeight * scale * 0.9f, Ui.sp(context, 40f)).coerceAtLeast(least)
+        // A line's box is a little smaller than its letters' size: the translation starts at about the
+        // original's size and shrinks to fit.
+        var size = min(p.block.lineHeight * scale * 1.12f, Ui.sp(context, 44f)).coerceAtLeast(least)
         var layout: StaticLayout
         while (true) {
             paint.textSize = size
@@ -561,6 +562,9 @@ class TranslationLayer(
             setWillNotDraw(false)
             isFocusable = true
             isFocusableInTouchMode = true
+            // Focused for Back, it would be greyed over by Android's focus highlight, and so would the
+            // picture of the screen taken through it.
+            defaultFocusHighlightEnabled = false
             setOnApplyWindowInsetsListener { _, insets ->
                 val bars = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())

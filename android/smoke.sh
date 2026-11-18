@@ -69,55 +69,7 @@ consent() {
     tap 'resource-id="android:id/button1"' || tap 'text="Start"' || tap 'text="Start now"'
   fi
 }
-# Waits up to $2 seconds for $1 in the app's log.
-seen() {
-  i=0
-  while [ "$i" -lt "$2" ]; do
-    adb logcat -d -v time > logcat.txt
-    grep -q "$1" logcat.txt && return 0
-    sleep 3
-    i=$((i + 3))
-  done
-  return 1
-}
-running() { adb shell dumpsys activity services "$pkg" | grep -q "CaptionService"; }
-log() { grep -E "hammurabi|AndroidRuntime|FATAL" logcat.txt | grep -v "AppsFilter\|WindowManager\|CarrierSvc\|ImsResolver\|Accessibility" | tail -60; }
-# The bubble's middle, from where the app says it put it.
-bubble() {
-  set -- $(grep "bubble: shown at" logcat.txt | tail -1 | sed -n 's/.*shown at \([0-9-]*\),\([0-9-]*\) size \([0-9]*\).*/\1 \2 \3/p')
-  [ $# -eq 3 ] || return 1
-  echo "$(($1 + $3 / 2)) $(($2 + $3 / 2))"
-}
-
-adb shell am start -W -n "$pkg/.MainActivity"
-sleep 6
-tap "resource-id=\"$pkg:id/toggle\"" || { echo "No Start button."; fail=1; }
-consent
-if seen "bubble: shown" 30; then echo "The bubble shows."; else echo "No bubble."; fail=1; fi
-log
-at=$(bubble)
-echo "The bubble is at $at."
-
-echo "---- another app in front, the bubble tapped ----"
-adb logcat -c
-adb shell am start -W -n "$pkg.test/$pkg.TextActivity"
-sleep 3
-front=$(adb shell dumpsys activity activities | grep -m1 -E 'topResumedActivity|mResumedActivity')
-echo "In front: $front"
-echo "$front" | grep -q TextActivity || { echo "The other app is not in front."; fail=1; }
-[ -n "$at" ] && adb shell input tap $at
-# Models download the first time on an emulator; it is slow.
-if seen "translate: done" 300; then
-  grep "translate:" logcat.txt
-  if grep -q "translate: done, [1-9][0-9]* of" logcat.txt; then echo "The other app's English was translated."; else echo "Nothing was translated."; fail=1; fi
-else
-  echo "The screen was not translated."
-  fail=1
-fi
-grep -q "translate: languages.*tr=" logcat.txt || { echo "The Turkish post was not told apart."; fail=1; }
-grep -E "ActivityTaskManager|AndroidRuntime" logcat.txt | grep -v "Accessibility" | head -20
-sleep 2
-# The translated screen, as a PNG in base64 (Python's own zlib: no image tools needed).
+# The screen, a third of its size, as a PNG in base64 (Python's own zlib: no image tools needed).
 shot() {
   adb exec-out screencap > screen.raw
   python3 - "$1" << 'PY'
@@ -143,6 +95,65 @@ for i in range(0, len(b64), 1000):
 print("---- end ----")
 PY
 }
+# Waits up to $2 seconds for $1 in the app's log.
+seen() {
+  i=0
+  while [ "$i" -lt "$2" ]; do
+    adb logcat -d -v time > logcat.txt
+    grep -q "$1" logcat.txt && return 0
+    sleep 3
+    i=$((i + 3))
+  done
+  return 1
+}
+running() { adb shell dumpsys activity services "$pkg" | grep -q "CaptionService"; }
+log() { grep -E "hammurabi|AndroidRuntime|FATAL" logcat.txt | grep -v "AppsFilter\|WindowManager\|CarrierSvc\|ImsResolver\|Accessibility" | tail -60; }
+# The bubble's middle, from where the app says it put it.
+bubble() {
+  set -- $(grep "bubble: shown at" logcat.txt | tail -1 | sed -n 's/.*shown at \([0-9-]*\),\([0-9-]*\) size \([0-9]*\).*/\1 \2 \3/p')
+  [ $# -eq 3 ] || return 1
+  echo "$(($1 + $3 / 2)) $(($2 + $3 / 2))"
+}
+
+# In Turkish, as on the phone it is made for (Android 13's per-app language).
+adb shell cmd locale set-app-locales "$pkg" --locales tr-TR
+adb shell am start -W -n "$pkg/.MainActivity"
+sleep 6
+tap "resource-id=\"$pkg:id/toggle\"" || { echo "No Start button."; fail=1; }
+consent
+if seen "bubble: shown" 30; then echo "The bubble shows."; else echo "No bubble."; fail=1; fi
+log
+at=$(bubble)
+echo "The bubble is at $at."
+# The main screen, on and scrolled down: how it looks.
+sleep 2
+shot main.png
+adb shell input swipe 540 1900 540 500 400
+sleep 1
+shot main2.png
+adb shell input swipe 540 1900 540 300 400
+sleep 1
+shot main3.png
+
+echo "---- another app in front, the bubble tapped ----"
+adb logcat -c
+adb shell am start -W -n "$pkg.test/$pkg.TextActivity"
+sleep 3
+front=$(adb shell dumpsys activity activities | grep -m1 -E 'topResumedActivity|mResumedActivity')
+echo "In front: $front"
+echo "$front" | grep -q TextActivity || { echo "The other app is not in front."; fail=1; }
+[ -n "$at" ] && adb shell input tap $at
+# Models download the first time on an emulator; it is slow.
+if seen "translate: done" 300; then
+  grep "translate:" logcat.txt
+  if grep -q "translate: done, [1-9][0-9]* of" logcat.txt; then echo "The other app's English was translated."; else echo "Nothing was translated."; fail=1; fi
+else
+  echo "The screen was not translated."
+  fail=1
+fi
+grep -q "translate: languages.*tr=" logcat.txt || { echo "The Turkish post was not told apart."; fail=1; }
+grep -E "ActivityTaskManager|AndroidRuntime" logcat.txt | grep -v "Accessibility" | head -20
+sleep 2
 shot translated.png
 adb shell input keyevent KEYCODE_BACK
 if seen "translate: closed" 10; then echo "Back closes the translation."; else echo "Back did not close the translation."; fail=1; fi
