@@ -195,7 +195,14 @@ class Bubble(private val context: Context, private val events: Events) {
             color = Ui.ACCENT
         }
         private val badge = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Ui.DANGER }
-        private val icon = context.getDrawable(R.drawable.ic_notification)!!.mutate()
+
+        /** A globe: languages. */
+        private val globe = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = Ui.dp(context, 1.8f).toFloat()
+            color = Ui.TEXT
+        }
+        private val meridian = RectF()
         private val oval = RectF()
         private var angle = 0f
         private var spinner: ValueAnimator? = null
@@ -239,9 +246,14 @@ class Bubble(private val context: Context, private val events: Events) {
             val r = width / 2f
             canvas.drawCircle(r, r, r - ring.strokeWidth, circle)
             canvas.drawCircle(r, r, r - ring.strokeWidth, ring)
-            val i = (width * 0.26f).toInt()
-            icon.setBounds(i, i, width - i, height - i)
-            icon.draw(canvas)
+            val g = width * 0.25f
+            canvas.drawCircle(r, r, g, globe)
+            meridian.set(r - g * 0.45f, r - g, r + g * 0.45f, r + g)
+            canvas.drawOval(meridian, globe)
+            canvas.drawLine(r - g, r, r + g, r, globe)
+            val w = g * 0.87f
+            canvas.drawLine(r - w, r - g * 0.5f, r + w, r - g * 0.5f, globe)
+            canvas.drawLine(r - w, r + g * 0.5f, r + w, r + g * 0.5f, globe)
             if (spinner != null) {
                 val inset = arc.strokeWidth
                 oval.set(inset, inset, width - inset, height - inset)

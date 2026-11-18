@@ -170,7 +170,11 @@ running || { echo "Hammurabi stopped."; fail=1; }
 
 echo "---- stop ----"
 adb shell am start -W -n "$pkg/.MainActivity"
-sleep 3
+sleep 2
+# Back to the top, where the button is (the screen was scrolled for its pictures).
+adb shell input swipe 540 600 540 2200 200
+adb shell input swipe 540 600 540 2200 200
+sleep 1
 tap "resource-id=\"$pkg:id/toggle\"" || { echo "No Stop button."; fail=1; }
 sleep 5
 if running; then echo "Still running after Stop."; fail=1; else echo "Stopped."; fi

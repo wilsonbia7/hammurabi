@@ -387,7 +387,7 @@ class TranslationLayer(
     /** Colours and text size for [p]'s translation, from the picture around and inside its block. */
     private fun style(p: Patch) {
         val translation = p.block.translation ?: return
-        if (Captions.alike(translation, p.block.text)) {
+        if (ScreenText.onlyRepeats(translation, p.block.text)) {
             // It says the same: the original stays.
             p.skip = true
             return
@@ -399,34 +399,42 @@ class TranslationLayer(
             color = p.foreground
             if (p.bold) typeface = Typeface.DEFAULT_BOLD
         }
-        val pad = dp(3f).toFloat()
+        val padX = dp(3f).toFloat()
+        val padY = dp(1f).toFloat()
         val viewW = (view.width.takeIf { it > 0 } ?: context.resources.displayMetrics.widthPixels).toFloat()
         val viewH = (view.height.takeIf { it > 0 } ?: context.resources.displayMetrics.heightPixels).toFloat()
         val rect = RectF(p.rect)
         val least = Ui.sp(context, 10f)
-        // A line's box is a little smaller than its letters' size: the translation starts at about the
-        // original's size and shrinks to fit.
-        var size = min(p.block.lineHeight * scale * 1.12f, Ui.sp(context, 44f)).coerceAtLeast(least)
+        val line = p.block.lineHeight * scale
+        // A font's line is taller than the box of its letters: the patch may grow by half a line, so the
+        // translation keeps about the original's size; past that it shrinks to fit.
+        val room = rect.height() + line * 0.5f
+        var size = min(line * 1.12f, Ui.sp(context, 44f)).coerceAtLeast(least)
         var layout: StaticLayout
         while (true) {
             paint.textSize = size
-            layout = layoutOf(translation, paint, (rect.width() - 2 * pad).toInt())
-            if (layout.height <= rect.height() - 2 * pad || size <= least) break
-            size = max(least, size * 0.9f)
+            layout = layoutOf(translation, paint, (rect.width() - 2 * padX).toInt())
+            if (layout.height + 2 * padY <= room || size <= least) break
+            size = max(least, size * 0.92f)
         }
-        if (layout.height > rect.height() - 2 * pad) {
-            // Still too big at the smallest size: a single line widens first, then the block grows down.
-            val wide = paint.measureText(translation) + 2 * pad
+        if (layout.height + 2 * padY > room) {
+            // Still too big at the smallest size: a single line widens first.
+            val wide = paint.measureText(translation) + 2 * padX
             if (p.block.lines == 1 && wide > rect.width()) {
                 rect.right = min(viewW - dp(4f), rect.left + wide)
                 if (rect.width() < wide) rect.left = max(dp(4f).toFloat(), rect.right - wide)
-                layout = layoutOf(translation, paint, (rect.width() - 2 * pad).toInt())
+                layout = layoutOf(translation, paint, (rect.width() - 2 * padX).toInt())
             }
-            if (layout.height > rect.height() - 2 * pad) rect.bottom = min(viewH, rect.top + layout.height + 2 * pad)
+        }
+        // Taller than the block: it grows about its middle.
+        val need = layout.height + 2 * padY
+        if (need > rect.height()) {
+            rect.top = max(0f, rect.top - (need - rect.height()) / 2)
+            rect.bottom = min(viewH, rect.top + need)
         }
         p.rect.set(rect)
         p.layout = layout
-        p.pad = pad
+        p.pad = padX
     }
 
     private fun layoutOf(text: String, paint: TextPaint, width: Int): StaticLayout =
@@ -601,7 +609,7 @@ class TranslationLayer(
                 fill.color = p.background
                 canvas.drawRoundRect(p.rect, radius, radius, fill)
                 canvas.save()
-                canvas.translate(p.rect.left + p.pad, p.rect.top + max(p.pad, (p.rect.height() - layout.height) / 2))
+                canvas.translate(p.rect.left + p.pad, p.rect.top + max(0f, (p.rect.height() - layout.height) / 2))
                 layout.draw(canvas)
                 canvas.restore()
             }

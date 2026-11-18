@@ -68,6 +68,16 @@ object ScreenText {
         text.count { it.isLetter() } < 16 || text.trim().split(Regex("\\s+")).size < 3
 
     /**
+     * Whether a translation only gives back its original, or some of its words: text in the target
+     * language already, or a name ("John Carter" comes back as "Carter").
+     */
+    fun onlyRepeats(translation: String, original: String): Boolean {
+        if (Captions.alike(translation, original)) return true
+        val words = { s: String -> s.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }.toSet() }
+        return original.isNotBlank() && words(original).containsAll(words(translation))
+    }
+
+    /**
      * The language most of the screen's text is in, by letters, for blocks too short to tell on their own;
      * null when that is [target] (nothing to translate) or none is known.
      */
@@ -227,8 +237,8 @@ class ScreenTranslator(
                 if (cancelled) return
                 try {
                     val t = Translations.translate(b.text, lang, target)
-                    // The same words back (a name, a brand): nothing to cover.
-                    if (Captions.alike(t, b.text)) continue
+                    // The same words back, or some of them (a name, a brand): nothing to cover.
+                    if (ScreenText.onlyRepeats(t, b.text)) continue
                     b.translation = t
                     translated++
                     post { listener.onTranslated(b) }

@@ -45,6 +45,15 @@ class ScreenTextTest {
     }
 
     @Test
+    fun aTranslationGivingBackTheOriginalsWordsIsNone() {
+        assertTrue(ScreenText.onlyRepeats("Carter", "John Carter"))
+        assertTrue(ScreenText.onlyRepeats("John Carter", "John Carter"))
+        assertTrue(ScreenText.onlyRepeats("", "Follow"))
+        assertFalse(ScreenText.onlyRepeats("Takip et", "Follow"))
+        assertFalse(ScreenText.onlyRepeats("Anahtarları nereye koydun?", "Where did you put the keys?"))
+    }
+
+    @Test
     fun theScreensLanguageIsWhatMostOfItIsIn() {
         val langs = listOf("en" to 120, "und" to 400, "tr" to 40, "en" to 30)
         assertEquals("en", ScreenText.dominant(langs, "tr"))
