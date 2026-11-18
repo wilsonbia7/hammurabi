@@ -4,6 +4,7 @@ pub mod config;
 pub mod device;
 pub mod i18n;
 pub mod models;
+pub mod onnx;
 pub mod paths;
 pub mod pipeline;
 pub mod screen;

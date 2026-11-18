@@ -20,7 +20,7 @@ pub struct Vad {
 
 impl Vad {
     pub fn new() -> anyhow::Result<Self> {
-        let env = ort::init().with_name("hammurabi").build()?;
+        let env = crate::onnx::env()?;
         let session = Session::builder(&env)?
             .with_intra_threads(1)
             .map_err(|e| anyhow::anyhow!("{e}"))?

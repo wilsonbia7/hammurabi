@@ -167,7 +167,7 @@ impl Supertonic {
         let cfg = json("onnx/tts.json")?;
         let num = |v: &Value| v.as_u64().context("tts.json is missing a value");
         let compress = num(&cfg["ttl"]["chunk_compress_factor"])? as usize;
-        let env = ort::init().with_name("hammurabi").build()?;
+        let env = crate::onnx::env()?;
         let session = |name: &str| -> anyhow::Result<Session> {
             Ok(Session::builder(&env)?.commit_from_file(dir.join("onnx").join(name))?)
         };
