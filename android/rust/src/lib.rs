@@ -38,9 +38,24 @@ struct Session {
 }
 
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
-/// Reading the screen, while Translate the screen runs: apart from `SESSION`, since a picture
-/// takes the recognizer a while and events must not wait.
-static SCREEN: Mutex<Option<page::PageRead>> = Mutex::new(None);
+/// Reading the screen, while Text on screen runs: apart from `SESSION`, since a picture takes the
+/// recognizer a while and events must not wait. A picture's reading takes the reader out and puts
+/// it back after, so a stop, or a new start, never waits for a reading to end: a reader that comes
+/// back to another run is let go.
+static SCREEN: Mutex<Screen> = Mutex::new(Screen {
+    read: None,
+    run: 0,
+    target: None,
+});
+
+struct Screen {
+    /// The reader, while no picture is being read.
+    read: Option<page::PageRead>,
+    /// Counts starts and stops.
+    run: u64,
+    /// A target language set while a picture was being read, for the reader when it is back.
+    target: Option<String>,
+}
 /// The app's files folder (`setup`).
 static FILES: OnceLock<PathBuf> = OnceLock::new();
 
@@ -48,7 +63,7 @@ fn session() -> MutexGuard<'static, Option<Session>> {
     SESSION.lock().unwrap_or_else(|p| p.into_inner())
 }
 
-fn screen_read() -> MutexGuard<'static, Option<page::PageRead>> {
+fn screen() -> MutexGuard<'static, Screen> {
     SCREEN.lock().unwrap_or_else(|p| p.into_inner())
 }
 
@@ -183,8 +198,12 @@ pub extern "system" fn Java_dev_menzo_hammurabi_Native_reconfigure<'local>(
             let json = settings.try_to_string(env)?;
             match parse_settings(&json) {
                 Ok(s) => {
-                    if let Some(read) = screen_read().as_mut() {
-                        read.set_target(&s.target_language);
+                    {
+                        let mut screen = screen();
+                        match screen.read.as_mut() {
+                            Some(read) => read.set_target(&s.target_language),
+                            None => screen.target = Some(s.target_language.clone()),
+                        }
                     }
                     if let Some(session) = session().as_mut() {
                         hammurabi::i18n::set(s.ui_language);
@@ -225,7 +244,7 @@ fn start(settings: Settings) {
     if settings.asr_backend == AsrBackend::ScreenText {
         let threads = std::thread::available_parallelism().map_or(2, |n| n.get().min(4));
         match page::PageRead::new(fed.screen.clone(), &ocr_dir(), threads, &target) {
-            Ok(read) => *screen_read() = Some(read),
+            Ok(read) => screen().read = Some(read),
             Err(e) => {
                 let _ = fed
                     .screen
@@ -338,15 +357,25 @@ pub extern "system" fn Java_dev_menzo_hammurabi_Native_screenFrame<'local>(
 }
 
 fn screen_frame(rgba: &[u8], w: usize, h: usize, stride: usize, mask: Option<[f32; 4]>) -> bool {
-    let mut guard = screen_read();
-    let Some(read) = guard.as_mut() else {
-        return false;
+    let (mut read, run, target) = {
+        let mut screen = screen();
+        let Some(read) = screen.read.take() else {
+            return false;
+        };
+        (read, screen.run, screen.target.take())
     };
+    if let Some(t) = target {
+        read.set_target(&t);
+    }
     if let Err(e) = read.frame(rgba, w, h, stride, mask) {
         // The engine has been told, stops, and says why.
         log::error!("screen: {e:#}");
-        *guard = None;
         return false;
+    }
+    let mut screen = screen();
+    // Stopped, or started anew, meanwhile: this reader is done.
+    if screen.run == run && screen.read.is_none() {
+        screen.read = Some(read);
     }
     true
 }
@@ -417,7 +446,12 @@ pub extern "system" fn Java_dev_menzo_hammurabi_Native_stop<'local>(
 }
 
 fn stop() {
-    *screen_read() = None;
+    {
+        let mut screen = screen();
+        screen.read = None;
+        screen.run += 1;
+        screen.target = None;
+    }
     let Some(s) = session().take() else {
         return;
     };

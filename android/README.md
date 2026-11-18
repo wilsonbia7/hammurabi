@@ -52,6 +52,18 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 The NDK is found through `ANDROID_NDK_HOME`, or under the SDK. CI (`.github/workflows/android.yml`)
 builds the same APK and keeps it as an artifact.
 
+## Tests
+
+- `cd rust && cargo test`: the page reader, the language filter and the recognizer's pieces. With
+  the OCR models and the pictures of `rust/tests/page_pictures.py`, `cargo test -- --ignored` reads
+  phone screenshots (a Turkish feed with English posts, scrolled, in dark mode, a video with a
+  subtitle, our own caption over a feed).
+- `./gradlew connectedDebugAndroidTest` on a phone or an emulator (`app/src/androidTest`): captions,
+  choices, the overlay, and the engine end to end through the app's native calls on a drawn feed.
+- CI runs those on an emulator, then uses the app as a person would (`smoke.sh`): starts Text on
+  screen, checks Hammurabi's own screen and then another app's are read (its English, not its
+  Turkish), stops, and starts and stops from the Quick Settings tile. Lint runs on every build.
+
 ## What it cannot do
 
 - Apps that forbid capture (Netflix and most paid video, banking apps) give silence, and their

@@ -21,6 +21,8 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
     private val thread = HandlerThread("hm-screen").apply { start() }
     private val handler = Handler(thread.looper)
     private var reader: ImageReader? = null
+
+    /** Made and resized on [thread], let go at once by [stop]: under [this]'s lock. */
     private var display: VirtualDisplay? = null
     private var size = 0 to 0
 
@@ -61,9 +63,13 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
 
     fun stop() {
         running = false
-        handler.post {
+        // At once, not after a picture being read: no more pictures, the screen sharing ends now.
+        synchronized(this) {
             display?.release()
             display = null
+        }
+        // The reader after: the picture being read is in its memory.
+        handler.post {
             reader?.close()
             reader = null
             thread.quitSafely()
@@ -102,22 +108,24 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
         this.scale = scale
         val w = maxOf(1, (cw * scale).toInt())
         val h = maxOf(1, (ch * scale).toInt())
-        if (display != null && size == (w to h)) return
-        val fresh = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
-        val d = display
-        if (d == null) {
-            display = projection.createVirtualDisplay(
-                "Hammurabi screen", w, h, metrics.densityDpi,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, fresh.surface, null, handler,
-            )
-        } else {
-            // One virtual display per projection since Android 14: it is resized, not made anew.
-            d.resize(w, h, metrics.densityDpi)
-            d.surface = fresh.surface
+        synchronized(this) {
+            if (!running || (display != null && size == (w to h))) return
+            val fresh = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
+            val d = display
+            if (d == null) {
+                display = projection.createVirtualDisplay(
+                    "Hammurabi screen", w, h, metrics.densityDpi,
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, fresh.surface, null, handler,
+                )
+            } else {
+                // One virtual display per projection since Android 14: it is resized, not made anew.
+                d.resize(w, h, metrics.densityDpi)
+                d.surface = fresh.surface
+            }
+            reader?.close()
+            reader = fresh
+            size = w to h
         }
-        reader?.close()
-        reader = fresh
-        size = w to h
     }
 
     private companion object {

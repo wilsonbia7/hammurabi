@@ -112,6 +112,26 @@ class EngineTest {
     }
 
     @Test
+    fun stoppingDoesNotWaitForAPictureBeingRead() {
+        assertTrue(OcrModels.ensure(context))
+        val (w, h) = 886 to 1920
+        val frame = feed(w, h)
+        assertTrue(Native.start(Choices(source = Source.SCREEN, translate = false, target = "tr").settingsJson()))
+        // The first picture is read at once, which takes a while.
+        val reading = Thread { Native.screenFrame(frame, w, h, w * 4, 0, 0, 0, 0) }.apply { start() }
+        SystemClock.sleep(300)
+        val t = SystemClock.uptimeMillis()
+        Native.stop()
+        val stopped = SystemClock.uptimeMillis() - t
+        Log.i("hammurabi-test", "stopped in $stopped ms, the reading still going: ${reading.isAlive}")
+        assertTrue("stopped in $stopped ms", stopped < 2_000)
+        // And a new start does not wait for it either; the old reading's end goes nowhere.
+        assertTrue(Native.start(Choices(source = Source.SCREEN, translate = false, target = "tr").settingsJson()))
+        reading.join()
+        assertTrue("the new run reads", Native.screenFrame(frame, w, h, w * 4, 0, 0, 0, 0))
+    }
+
+    @Test
     fun ourOwnCaptionsAreNotRead() {
         assertTrue(OcrModels.ensure(context))
         val (w, h) = 886 to 1920

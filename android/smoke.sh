@@ -106,6 +106,9 @@ echo "---- the Quick Settings tile ----"
 adb logcat -c
 adb shell cmd statusbar add-tile "$pkg/.CaptionTile"
 sleep 2
+# As a person does it: Quick Settings open, the tile tapped.
+adb shell cmd statusbar expand-settings
+sleep 3
 adb shell cmd statusbar click-tile "$pkg/.CaptionTile"
 sleep 5
 if ui | grep -q 'package="com.android.systemui"'; then
@@ -114,9 +117,14 @@ fi
 adb shell cmd statusbar collapse
 adb shell am start -W -n "$pkg.test/$pkg.TextActivity"
 if seen "screen: Where did you put the keys" 240; then echo "Started from the tile, reading."; else echo "The tile did not start reading."; fail=1; fi
+adb shell cmd statusbar expand-settings
+sleep 3
 adb shell cmd statusbar click-tile "$pkg/.CaptionTile"
 sleep 5
+adb shell cmd statusbar collapse
 if running; then echo "The tile did not stop captions."; fail=1; else echo "Stopped from the tile."; fi
+adb logcat -d -v time > logcat.txt
+grep "tile:" logcat.txt
 log
 adb shell pidof "$pkg" > /dev/null || echo "(Hammurabi's process has ended.)"
 adb logcat -d -v time | grep -q "FATAL EXCEPTION.*$pkg\|Process: $pkg" && { echo "Hammurabi crashed."; fail=1; }
