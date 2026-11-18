@@ -13,9 +13,12 @@
     <!-- The bubble, the translated screen and the subtitles over other apps. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- Back keeps coming as a key (Android 16 stops sending it to apps for 36 otherwise): it closes
+         the translated screen, a window over other apps. -->
     <application
         android:name=".App"
         android:allowBackup="false"
+        android:enableOnBackInvokedCallback="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"

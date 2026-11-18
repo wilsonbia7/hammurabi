@@ -102,7 +102,9 @@ echo "---- another app in front, the bubble tapped ----"
 adb logcat -c
 adb shell am start -W -n "$pkg.test/$pkg.TextActivity"
 sleep 3
-echo "In front: $(adb shell dumpsys activity activities | grep -m1 -E 'topResumedActivity|mResumedActivity')"
+front=$(adb shell dumpsys activity activities | grep -m1 -E 'topResumedActivity|mResumedActivity')
+echo "In front: $front"
+echo "$front" | grep -q TextActivity || { echo "The other app is not in front."; fail=1; }
 [ -n "$at" ] && adb shell input tap $at
 # Models download the first time on an emulator; it is slow.
 if seen "translate: done" 300; then
