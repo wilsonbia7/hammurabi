@@ -65,8 +65,8 @@ needs a key of its own.
 - `./gradlew connectedDebugAndroidTest` on a phone or an emulator (`app/src/androidTest`): the
   settings and languages, how lines become paragraphs, the subtitles, the engine through the app's
   native calls, the screen translated end to end with ML Kit on a drawn feed (English translated,
-  Turkish left, numbers skipped), and the translated layer over another app, whose picture goes to
-  `files/layer.jpg`.
+  Turkish left, numbers skipped), subtitles translated as they come, and the translated layer over
+  another app, whose picture goes to `files/layer.jpg`.
 - CI runs those on an emulator, then uses the app as a person would (`smoke.sh`): starts it, taps
   the bubble over another app and checks its English is translated, closes the translation with
   Back, holds the bubble for its menu, stops, and starts and stops from the Quick Settings tile.
