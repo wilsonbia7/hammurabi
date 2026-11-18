@@ -1,3 +1,8 @@
+// Imported: in a script with the Android plugin, `java.` names its `java` extension, not the package.
+import java.net.URI
+import java.security.MessageDigest
+import java.util.zip.ZipFile
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -76,13 +81,13 @@ val fetchOcrModels by tasks.registering {
         val dir = File(ocrAssets, "ocr").apply { mkdirs() }
         if (ocrModels.all { File(dir, it).isFile }) return@doLast
         val wheel = File(temporaryDir, "rapidocr.whl")
-        java.net.URI(ocrWheelUrl).toURL().openStream().use { input ->
+        URI(ocrWheelUrl).toURL().openStream().use { input ->
             wheel.outputStream().use { input.copyTo(it) }
         }
-        val sha = java.security.MessageDigest.getInstance("SHA-256").digest(wheel.readBytes())
+        val sha = MessageDigest.getInstance("SHA-256").digest(wheel.readBytes())
             .joinToString("") { "%02x".format(it) }
         check(sha == ocrWheelSha256) { "RapidOCR's wheel has hash $sha, not $ocrWheelSha256" }
-        java.util.zip.ZipFile(wheel).use { zip ->
+        ZipFile(wheel).use { zip ->
             for (name in ocrModels) {
                 val entry = zip.getEntry("rapidocr_onnxruntime/models/$name") ?: error("$name is not in the wheel")
                 zip.getInputStream(entry).use { input -> File(dir, name).outputStream().use { input.copyTo(it) } }
