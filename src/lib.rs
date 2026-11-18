@@ -11,4 +11,6 @@ pub mod settings;
 pub mod translate;
 pub mod tts;
 pub mod types;
+/// The desktop app. On Android the app in android/ is the UI and feeds the engine itself.
+#[cfg(not(target_os = "android"))]
 pub mod ui;
