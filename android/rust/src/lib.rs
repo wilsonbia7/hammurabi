@@ -1,27 +1,23 @@
 //! The Android app's way into Hammurabi (android/app, `Native.kt`): one engine at a time, fed with
-//! the audio the app records, or with the text read off the screen pictures it captures
-//! (`page`, `Engine::spawn_fed_screen`), and read back as JSON events. Captions use the JSON of
-//! the desktop's browser source (`ui::web`), so the same drawing code can read both.
-
-mod lang;
-mod ocr;
-mod page;
+//! the audio the app records (`Engine::spawn_fed`), and read back as JSON events. Captions use the
+//! JSON of the desktop's browser source (`ui::web`), so the same drawing code can read both. The
+//! app reads and translates the screen itself, with Google's ML Kit.
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard, Once, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard, Once};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Sender, TrySendError};
 use hammurabi::models::{self, ModelId};
 use hammurabi::pipeline::{Engine, EngineHandle};
-use hammurabi::settings::{AsrBackend, SOURCE_LANGS, Settings, TARGET_LANGS};
+use hammurabi::settings::{AsrBackend, SOURCE_LANGS, Settings};
 use hammurabi::types::{
     AudioChunk, CaptionUpdate, EngineCommand, EngineEvent, EngineState, ProgressPhase, SourceKind,
     StatusLevel,
 };
 use jni::EnvUnowned;
 use jni::errors::ThrowRuntimeExAndDefault;
-use jni::objects::{JByteBuffer, JClass, JShortArray, JString};
+use jni::objects::{JClass, JShortArray, JString};
 use jni::sys::{jboolean, jint};
 use serde_json::{Value, json};
 
@@ -38,33 +34,9 @@ struct Session {
 }
 
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
-/// Reading the screen, while Text on screen runs: apart from `SESSION`, since a picture takes the
-/// recognizer a while and events must not wait. A picture's reading takes the reader out and puts
-/// it back after, so a stop, or a new start, never waits for a reading to end: a reader that comes
-/// back to another run is let go.
-static SCREEN: Mutex<Screen> = Mutex::new(Screen {
-    read: None,
-    run: 0,
-    target: None,
-});
-
-struct Screen {
-    /// The reader, while no picture is being read.
-    read: Option<page::PageRead>,
-    /// Counts starts and stops.
-    run: u64,
-    /// A target language set while a picture was being read, for the reader when it is back.
-    target: Option<String>,
-}
-/// The app's files folder (`setup`).
-static FILES: OnceLock<PathBuf> = OnceLock::new();
 
 fn session() -> MutexGuard<'static, Option<Session>> {
     SESSION.lock().unwrap_or_else(|p| p.into_inner())
-}
-
-fn screen() -> MutexGuard<'static, Screen> {
-    SCREEN.lock().unwrap_or_else(|p| p.into_inner())
 }
 
 /// `Native.setup(filesDir, threads)`: before `start`, once per process (later calls change
@@ -99,8 +71,7 @@ fn setup(dir: PathBuf, threads: i32) -> anyhow::Result<()> {
             previous(info);
         }));
     });
-    hammurabi::paths::set_root(dir.clone());
-    let _ = FILES.set(dir);
+    hammurabi::paths::set_root(dir);
     set_threads(threads);
     // Silero VAD runs on ONNX Runtime from the app's onnxruntime-android package. Loading it now
     // turns a missing or too old library into an error here instead of a panic in the engine.
@@ -198,13 +169,6 @@ pub extern "system" fn Java_dev_menzo_hammurabi_Native_reconfigure<'local>(
             let json = settings.try_to_string(env)?;
             match parse_settings(&json) {
                 Ok(s) => {
-                    {
-                        let mut screen = screen();
-                        match screen.read.as_mut() {
-                            Some(read) => read.set_target(&s.target_language),
-                            None => screen.target = Some(s.target_language.clone()),
-                        }
-                    }
                     if let Some(session) = session().as_mut() {
                         hammurabi::i18n::set(s.ui_language);
                         session.target = s.target_language.clone();
@@ -220,42 +184,29 @@ pub extern "system" fn Java_dev_menzo_hammurabi_Native_reconfigure<'local>(
 
 fn parse_settings(json: &str) -> anyhow::Result<Settings> {
     let mut s: Settings = serde_json::from_str(json)?;
-    // Listening or the screen's subtitles; no Windows Live Captions, no voices, no web page.
-    if s.asr_backend == AsrBackend::WindowsLiveCaptions {
+    // Listening only: no Windows Live Captions, no screen reading (the app does it), no voices,
+    // no web page.
+    if matches!(
+        s.asr_backend,
+        AsrBackend::WindowsLiveCaptions | AsrBackend::ScreenText
+    ) {
         s.asr_backend = AsrBackend::Whisper;
     }
     s.speak = false;
     s.browser_source = false;
-    // The translation goes in the caption box: what is read can be anywhere on the screen.
     s.screen_cover = false;
     Ok(s)
-}
-
-/// The recognizer's models, copied out of the app by `CaptionService` (`OcrModels.kt`).
-fn ocr_dir() -> PathBuf {
-    FILES.get().cloned().unwrap_or_default().join("ocr")
 }
 
 fn start(settings: Settings) {
     stop();
     hammurabi::i18n::set(settings.ui_language);
-    let (engine, fed) = Engine::spawn_fed_screen(Arc::new(|| {}));
+    let (engine, audio) = Engine::spawn_fed(Arc::new(|| {}));
     let target = settings.target_language.clone();
-    if settings.asr_backend == AsrBackend::ScreenText {
-        let threads = std::thread::available_parallelism().map_or(2, |n| n.get().min(4));
-        match page::PageRead::new(fed.screen.clone(), &ocr_dir(), threads, &target) {
-            Ok(read) => screen().read = Some(read),
-            Err(e) => {
-                let _ = fed
-                    .screen
-                    .send(hammurabi::screen::ScreenEvent::Error(format!("{e:#}")));
-            }
-        }
-    }
     engine.send(EngineCommand::Start(settings));
     *session() = Some(Session {
         engine: Arc::new(engine),
-        audio: fed.audio,
+        audio,
         target,
         dropped: 0,
     });
@@ -312,72 +263,6 @@ fn feed(chunk: AudioChunk) -> bool {
         }
         Err(TrySendError::Disconnected(_)) => false,
     }
-}
-
-/// `Native.screenFrame(frame, width, height, rowStride, maskLeft, maskTop, maskRight,
-/// maskBottom)`: a picture of the screen as an ImageReader gives it (a direct buffer of RGBA
-/// rows), while Translate the screen runs, and where our captions are in it (all 0: none). False
-/// when nothing reads pictures now.
-#[unsafe(no_mangle)]
-#[allow(clippy::too_many_arguments)]
-pub extern "system" fn Java_dev_menzo_hammurabi_Native_screenFrame<'local>(
-    mut unowned: EnvUnowned<'local>,
-    _class: JClass<'local>,
-    frame: JByteBuffer<'local>,
-    width: jint,
-    height: jint,
-    row_stride: jint,
-    mask_left: jint,
-    mask_top: jint,
-    mask_right: jint,
-    mask_bottom: jint,
-) -> jboolean {
-    unowned
-        .with_env(|env| -> jni::errors::Result<jboolean> {
-            let (Ok(w), Ok(h), Ok(stride)) = (
-                usize::try_from(width),
-                usize::try_from(height),
-                usize::try_from(row_stride),
-            ) else {
-                return Ok(false);
-            };
-            let ptr = env.get_direct_buffer_address(&frame)?;
-            let len = env.get_direct_buffer_capacity(&frame)?;
-            if ptr.is_null() {
-                return Ok(false);
-            }
-            // SAFETY: a direct buffer's memory stays valid while the Java call that passed it
-            // runs (the image stays open until this returns), and is only read here.
-            let rgba = unsafe { std::slice::from_raw_parts(ptr.cast_const(), len) };
-            let mask = (mask_right > mask_left && mask_bottom > mask_top)
-                .then(|| [mask_left, mask_top, mask_right, mask_bottom].map(|v| v as f32));
-            Ok(screen_frame(rgba, w, h, stride, mask))
-        })
-        .resolve::<ThrowRuntimeExAndDefault>()
-}
-
-fn screen_frame(rgba: &[u8], w: usize, h: usize, stride: usize, mask: Option<[f32; 4]>) -> bool {
-    let (mut read, run, target) = {
-        let mut screen = screen();
-        let Some(read) = screen.read.take() else {
-            return false;
-        };
-        (read, screen.run, screen.target.take())
-    };
-    if let Some(t) = target {
-        read.set_target(&t);
-    }
-    if let Err(e) = read.frame(rgba, w, h, stride, mask) {
-        // The engine has been told, stops, and says why.
-        log::error!("screen: {e:#}");
-        return false;
-    }
-    let mut screen = screen();
-    // Stopped, or started anew, meanwhile: this reader is done.
-    if screen.run == run && screen.read.is_none() {
-        screen.read = Some(read);
-    }
-    true
 }
 
 /// `Native.poll(timeoutMs)`: the next event as JSON, or null when none came in that time.
@@ -446,12 +331,6 @@ pub extern "system" fn Java_dev_menzo_hammurabi_Native_stop<'local>(
 }
 
 fn stop() {
-    {
-        let mut screen = screen();
-        screen.read = None;
-        screen.run += 1;
-        screen.target = None;
-    }
     let Some(s) = session().take() else {
         return;
     };
@@ -463,7 +342,7 @@ fn stop() {
     }
 }
 
-/// `Native.info()`: what the app offers, as JSON: the languages, and the speech models with
+/// `Native.info()`: what the app offers, as JSON: the languages heard, and the speech models with
 /// their download sizes and whether they are downloaded (call `setup` first).
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_menzo_hammurabi_Native_info<'local>(
@@ -488,14 +367,12 @@ fn info() -> Value {
     };
     json!({
         "source": SOURCE_LANGS,
-        "target": TARGET_LANGS,
         // `ModelChoice` names. Larger ones are too slow for a phone's processor.
         "models": [
             model("Tiny", ModelId::WhisperTiny),
             model("Base", ModelId::WhisperBase),
             model("Small", ModelId::WhisperSmall),
         ],
-        "translator": model("Builtin", ModelId::Madlad3bQ4k),
     })
 }
 
@@ -535,12 +412,13 @@ fn event_json(ev: EngineEvent, target: &str) -> Option<Value> {
             json!({"t": "stats", "asr_ms": asr_ms, "device": device})
         }
         EngineEvent::Translated { ms } => json!({"t": "translated", "ms": ms}),
-        // Read aloud is off here, and translations do not cover what was read on the screen.
+        // Read aloud is off here, and nothing covers a subtitle on the screen.
         EngineEvent::Speech(_) | EngineEvent::Place(_) => return None,
     })
 }
 
-/// As `ui::web` sends captions to its page.
+/// As `ui::web` sends captions to its page, with the language heard (`lang`, empty when not
+/// known yet), which the app translates from.
 fn caption_json(c: &CaptionUpdate, target: &str) -> Value {
     match c {
         CaptionUpdate::Final {
@@ -548,9 +426,14 @@ fn caption_json(c: &CaptionUpdate, target: &str) -> Value {
             original,
             translated,
             lang,
-        } => {
-            json!({"t": "final", "id": id, "o": original, "tr": translated, "same": lang == target})
-        }
+        } => json!({
+            "t": "final",
+            "id": id,
+            "o": original,
+            "tr": translated,
+            "same": lang == target,
+            "lang": lang,
+        }),
         CaptionUpdate::Live {
             original,
             translated,
@@ -560,6 +443,7 @@ fn caption_json(c: &CaptionUpdate, target: &str) -> Value {
             "o": original,
             "tr": translated,
             "same": lang.as_deref() == Some(target),
+            "lang": lang.as_deref().unwrap_or(""),
         }),
         CaptionUpdate::Clear => json!({"t": "clear"}),
     }
@@ -596,7 +480,8 @@ mod tests {
         );
         assert_eq!(
             final_,
-            json!({"t": "final", "id": 7, "o": "Hello there.", "tr": "Merhaba.", "same": false})
+            json!({"t": "final", "id": 7, "o": "Hello there.", "tr": "Merhaba.", "same": false,
+                   "lang": "en"})
         );
         let live = caption_json(
             &CaptionUpdate::Live {
@@ -607,6 +492,7 @@ mod tests {
             "tr",
         );
         assert_eq!(live["same"], true);
+        assert_eq!(live["lang"], "tr");
         assert!(event_json(EngineEvent::Speech(hammurabi::tts::Activity::Idle), "tr").is_none());
     }
 

@@ -4,51 +4,51 @@ import android.content.Context
 import org.json.JSONObject
 import java.util.Locale
 
-/** What to translate, in the order the main screen offers it. */
-enum class Source(val engineName: String) {
-    /** Translate the screen: text anywhere on it (posts, comments, subtitles), read instead of listened to. */
-    SCREEN("System"),
-
-    /** What other apps play: videos, music, games. Calls, and apps that forbid it, stay unheard. */
+/** What automatic subtitles listen to. */
+enum class Listen(val engineName: String) {
+    /** What other apps play: videos, games. Calls, and apps that forbid it, stay unheard. */
     SYSTEM("System"),
 
     /** People talking near the phone. */
     MIC("Microphone"),
-    BOTH("Both");
-
-    /** Listens rather than reads, with a speech model; needs the microphone permission (other apps' sound too). */
-    val listens get() = this != SCREEN
-
-    /** Needs screen sharing: to read the screen, or to hear what other apps play. */
-    val shares get() = this != MIC
 }
 
-/** The choices on the main screen, kept between launches. */
+/** Which letters are read off the screen. Each recognizer other than Latin's reads Latin letters too. */
+enum class Script { LATIN, CHINESE, JAPANESE, KOREAN }
+
+/** The settings, kept between launches. */
 data class Choices(
-    val source: Source = Source.SCREEN,
-    /** Null = recognise the language. */
+    /** The language everything is translated into: one of ML Kit's (`Languages`). */
+    val target: String = Languages.defaultTarget(),
+    /** Automatic subtitles: speech heard, translated at the bottom of the screen. */
+    val subtitles: Boolean = false,
+    val listen: Listen = Listen.SYSTEM,
+    /** The language spoken; null = recognised. */
     val spoken: String? = null,
-    val translate: Boolean = true,
-    val target: String = Locale.getDefault().language.ifEmpty { "en" },
     /** `ModelChoice` name. Tiny keeps up on most phones; Base hears better on fast ones. */
     val model: String = "Tiny",
-    /** Captions over other apps too, not only on this screen. */
-    val overlay: Boolean = true,
-    val showOriginal: Boolean = true,
+    /** The subtitles' size: 0 small, 1 medium, 2 large. */
+    val textSize: Int = 1,
+    /** Subtitles show what was said under its translation. */
+    val showOriginal: Boolean = false,
+    val script: Script = Script.LATIN,
     /** Processor cores for the speech model; 0 = the fast ones. Takes effect when the app starts again. */
     val threads: Int = 0,
 ) {
-    /** The engine's settings (`Settings` in src/settings.rs); fields left out keep its defaults. */
+    /**
+     * The engine's settings (`Settings` in src/settings.rs) for automatic subtitles; fields left out keep its
+     * defaults. The engine only listens: the app translates what it hears, with ML Kit.
+     */
     fun settingsJson(): String = JSONObject()
-        .put("asr_backend", if (source == Source.SCREEN) "ScreenText" else "Whisper")
-        .put("source", source.engineName)
+        .put("asr_backend", "Whisper")
+        .put("source", listen.engineName)
         .put("spoken_language", spoken ?: JSONObject.NULL)
-        .put("translate", translate)
+        .put("translate", false)
         .put("target_language", target)
         .put("model", model)
         // Whisper's 30 s window cut to the speech: much faster on a processor.
         .put("trim_audio", true)
-        // The engine's own messages (an error, "reading the screen") in the phone's language, where it has them.
+        // The engine's own messages (an error, a download) in the phone's language, where it has them.
         .put("ui_language", engineLanguage())
         .toString()
 
@@ -62,33 +62,63 @@ data class Choices(
 }
 
 object Prefs {
-    private const val FILE = "choices"
+    /** Not "choices", the first version's file: its settings meant other things. */
+    private const val FILE = "settings"
+    private const val BUBBLE = "bubble"
 
     fun load(context: Context): Choices {
         val p = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         val d = Choices()
         return Choices(
-            source = runCatching { Source.valueOf(p.getString("source", d.source.name)!!) }.getOrDefault(d.source),
+            target = p.getString("target", null)?.let { Languages.supported(it) } ?: d.target,
+            subtitles = p.getBoolean("subtitles", d.subtitles),
+            listen = runCatching { Listen.valueOf(p.getString("listen", d.listen.name)!!) }.getOrDefault(d.listen),
             spoken = p.getString("spoken", null),
-            translate = p.getBoolean("translate", d.translate),
-            target = p.getString("target", d.target) ?: d.target,
             model = p.getString("model", d.model) ?: d.model,
-            overlay = p.getBoolean("overlay", d.overlay),
+            textSize = p.getInt("text_size", d.textSize).coerceIn(0, 2),
             showOriginal = p.getBoolean("show_original", d.showOriginal),
+            script = runCatching { Script.valueOf(p.getString("script", d.script.name)!!) }.getOrDefault(d.script),
             threads = p.getInt("threads", d.threads),
         )
     }
 
     fun save(context: Context, c: Choices) {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
-            .putString("source", c.source.name)
-            .putString("spoken", c.spoken)
-            .putBoolean("translate", c.translate)
             .putString("target", c.target)
+            .putBoolean("subtitles", c.subtitles)
+            .putString("listen", c.listen.name)
+            .putString("spoken", c.spoken)
             .putString("model", c.model)
-            .putBoolean("overlay", c.overlay)
+            .putInt("text_size", c.textSize)
             .putBoolean("show_original", c.showOriginal)
+            .putString("script", c.script.name)
             .putInt("threads", c.threads)
             .apply()
+    }
+
+    /** Changes the saved settings with [change] and returns them. */
+    fun update(context: Context, change: (Choices) -> Choices): Choices {
+        val c = change(load(context))
+        save(context, c)
+        return c
+    }
+
+    /** Where the bubble sits: on the right edge or the left, and how far down the screen (0 to 1). */
+    fun bubble(context: Context): Pair<Boolean, Float> {
+        val p = context.getSharedPreferences(BUBBLE, Context.MODE_PRIVATE)
+        return p.getBoolean("right", true) to p.getFloat("y", 0.35f).coerceIn(0f, 1f)
+    }
+
+    fun saveBubble(context: Context, right: Boolean, y: Float) {
+        context.getSharedPreferences(BUBBLE, Context.MODE_PRIVATE).edit()
+            .putBoolean("right", right).putFloat("y", y).apply()
+    }
+
+    /** Whether the bubble's "tap / hold" hint was shown; true once it is. */
+    fun hintShown(context: Context): Boolean =
+        context.getSharedPreferences(BUBBLE, Context.MODE_PRIVATE).getBoolean("hint", false)
+
+    fun setHintShown(context: Context) {
+        context.getSharedPreferences(BUBBLE, Context.MODE_PRIVATE).edit().putBoolean("hint", true).apply()
     }
 }

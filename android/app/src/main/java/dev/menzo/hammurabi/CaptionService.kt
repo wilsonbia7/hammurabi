@@ -1,5 +1,6 @@
 package dev.menzo.hammurabi
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
@@ -8,12 +9,14 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.graphics.drawable.Icon
 import android.media.AudioAttributes
-import android.media.AudioManager
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -24,143 +27,379 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.Process
-import android.provider.Settings
-import android.util.Log
+import android.view.WindowInsets
+import android.view.WindowManager
 import android.widget.Toast
 import org.json.JSONException
 import org.json.JSONObject
+import java.util.concurrent.Executors
 import kotlin.concurrent.thread
 
-private const val TAG = "hammurabi"
-
 /**
- * Runs while captions are on: records the microphone and/or what other apps play, or captures the screen,
- * feeds it to the engine, and hands the engine's events to the screens. A foreground service, so it keeps
- * going while another app (a video, a feed, a game) is in front.
+ * Runs while Hammurabi is on: the bubble over every app, the screen sharing its pictures come from, and
+ * automatic subtitles when they are on. A foreground service, so it keeps going while another app (a feed, a
+ * video, a game) is in front.
  */
-class CaptionService : Service() {
+class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
     private val main = Handler(Looper.getMainLooper())
     private var projection: MediaProjection? = null
     private var projectionCallback: MediaProjection.Callback? = null
-    private val recorders = mutableListOf<Recorder>()
     private var capture: ScreenCapture? = null
-    private var overlay: CaptionOverlay? = null
+    private var bubble: Bubble? = null
+    private var menu: BubbleMenu? = null
 
-    /** Bumped at every start and stop: a poller from an earlier start sees it changed and ends. */
+    /** The screen translated, while it shows, and the picture it was made from. */
+    private var layer: TranslationLayer? = null
+    private var shot: Bitmap? = null
+    private var translator: ScreenTranslator? = null
+
+    /** Automatic subtitles, while on. */
+    private var subtitles = false
+    private val recorders = mutableListOf<Recorder>()
+    private var overlay: CaptionOverlay? = null
+    private var subtitleTranslator: SubtitleTranslator? = null
+
+    /** The foreground service may use the microphone: started so, with the permission given. */
+    private var micAllowed = false
+
+    /** Bumped at every subtitles start and stop: a poller from an earlier start sees it changed and ends. */
     @Volatile
     private var generation = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> begin(intent)
+            ACTION_SHARE -> if (running) share(intent) else begin(intent)
             ACTION_STOP -> end()
-            // Restarted by the system without our intent: nothing to listen to.
-            else -> stopSelf()
+            // Restarted by the system without our intent: no screen sharing to go on with.
+            else -> if (!running) stopSelf()
         }
         return START_NOT_STICKY
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        // The screen turned: the pictures read turn with it.
+        // The screen turned: the translation's places no longer match, the bubble goes back to its edge.
+        layer?.close()
+        menu?.dismiss()
         capture?.resize()
+        bubble?.relayout()
     }
 
     override fun onDestroy() {
         end()
+        if (instance === this) instance = null
         super.onDestroy()
     }
 
     private fun begin(intent: Intent) {
-        if (running) stopListening()
-        // What an earlier run said (its error, say) is not about this one.
-        CaptionBus.last.clear()
-        val source = runCatching { Source.valueOf(intent.getStringExtra(EXTRA_SOURCE)!!) }.getOrDefault(Source.MIC)
-        val settings = intent.getStringExtra(EXTRA_SETTINGS) ?: "{}"
-        var type = 0
-        // The microphone type came in Android 11; Android 10 refuses a type it does not know.
-        if ((source == Source.MIC || source == Source.BOTH) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        if (running) {
+            share(intent)
+            return
         }
-        if (source != Source.MIC) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-        try {
-            startForeground(NOTIFICATION_ID, notification(), type)
-        } catch (e: RuntimeException) {
-            // Not allowed now: a permission is missing, or the app is not in front.
-            fail(e.message ?: e.toString())
+        CaptionBus.last.clear()
+        if (!foreground(granted(Manifest.permission.RECORD_AUDIO))) {
+            fail(getString(R.string.error_foreground))
             return
         }
         running = true
-        emitState("loading")
-        if (source != Source.MIC) {
-            // Android 14: only once the foreground service runs with the projection type.
-            val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            val data = intent.parcelableExtra(EXTRA_PROJECTION_DATA)
-            val code = intent.getIntExtra(EXTRA_PROJECTION_CODE, 0)
-            val p = data?.let { runCatching { manager.getMediaProjection(code, it) }.getOrNull() }
-            if (p == null) {
-                fail(getString(R.string.error_projection))
-                return
-            }
-            // Stopped from the status bar or the screen lock: captions end too. Only this projection's
-            // end: one stopped for a new start must not end that.
-            val callback = object : MediaProjection.Callback() {
-                override fun onStop() {
-                    main.post { if (projection === p) end() }
-                }
-
-                // Android 14: the app shared alone took another size.
-                override fun onCapturedContentResize(width: Int, height: Int) {
-                    if (projection === p) capture?.resize(width, height)
-                }
-            }
-            p.registerCallback(callback, main)
-            projection = p
-            projectionCallback = callback
+        AppLog.i("service: started")
+        CaptionBus.emit(JSONObject().put("t", "service").put("on", true))
+        if (!project(intent)) {
+            fail(getString(R.string.error_projection))
+            return
         }
-        val wantsOverlay = intent.getBooleanExtra(EXTRA_OVERLAY, false)
-        val showOriginal = intent.getBooleanExtra(EXTRA_SHOW_ORIGINAL, true)
-        Engine.run {
-            val error = Engine.setup(this) ?: when {
-                source == Source.SCREEN && !OcrModels.ensure(this) -> getString(R.string.error_ocr_models)
-                !Native.start(settings) -> getString(R.string.error_settings)
-                else -> null
+        bubble = Bubble(this, this).also { it.show() }
+        menu = BubbleMenu(this, this)
+        val c = Prefs.load(this)
+        prepare(c)
+        if (c.subtitles) startSubtitles()
+    }
+
+    /** Screen sharing again, after it ended (the screen locked, or stopped from the status bar). */
+    private fun share(intent: Intent) {
+        foreground(micAllowed)
+        if (!project(intent)) {
+            toast(getString(R.string.error_projection))
+            return
+        }
+        bubble?.needsSharing = false
+        // Subtitles of the phone's sound stopped with the sharing.
+        if (Prefs.load(this).subtitles && !subtitles) startSubtitles()
+    }
+
+    /** The foreground service, with the microphone when [mic]; false when Android does not allow it now. */
+    private fun foreground(mic: Boolean): Boolean {
+        var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+        // The microphone type came in Android 11; Android 10 refuses a type it does not know.
+        val withMic = mic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+        if (withMic) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        return try {
+            startForeground(NOTIFICATION_ID, notification(), type)
+            micAllowed = mic
+            true
+        } catch (e: RuntimeException) {
+            AppLog.e("service: foreground refused (microphone $withMic)", e)
+            false
+        }
+    }
+
+    /** Takes the screen sharing the user agreed to (Android 14: once the foreground service runs with it). */
+    private fun project(intent: Intent): Boolean {
+        val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        val data = intent.parcelableExtra(EXTRA_PROJECTION_DATA) ?: return false
+        val code = intent.getIntExtra(EXTRA_PROJECTION_CODE, 0)
+        val p = try {
+            manager.getMediaProjection(code, data)
+        } catch (e: RuntimeException) {
+            AppLog.e("service: no screen sharing", e)
+            null
+        } ?: return false
+        dropProjection()
+        // Stopped from the status bar or by the screen lock. Only this sharing's end: one replaced by a new
+        // one must not end that.
+        val callback = object : MediaProjection.Callback() {
+            override fun onStop() {
+                main.post { if (projection === p) projectionEnded() }
             }
-            main.post {
-                // Stopped meanwhile: the stop queued after this start ends the engine.
-                if (!running) return@post
-                if (error != null) {
-                    fail(error)
-                    return@post
+        }
+        p.registerCallback(callback, main)
+        projection = p
+        projectionCallback = callback
+        capture = ScreenCapture(this, p).also { it.start() }
+        AppLog.i("service: screen sharing on")
+        return true
+    }
+
+    private fun projectionEnded() {
+        AppLog.i("service: screen sharing ended")
+        layer?.close()
+        dropProjection()
+        bubble?.needsSharing = true
+        if (subtitles && Prefs.load(this).listen == Listen.SYSTEM) stopSubtitles()
+    }
+
+    private fun dropProjection() {
+        capture?.stop()
+        capture = null
+        val p = projection
+        projection = null
+        projectionCallback?.let { c -> p?.let { runCatching { it.unregisterCallback(c) } } }
+        projectionCallback = null
+        runCatching { p?.stop() }
+    }
+
+    /** The first translation is quicker with the reader loaded and the target language downloaded. */
+    private fun prepare(c: Choices) {
+        warmup.execute {
+            runCatching { Recognizers.get(c.script) }
+            for (lang in listOf(c.target, "en").distinct()) {
+                if (Translations.isDownloaded(lang)) continue
+                CaptionBus.post(JSONObject().put("t", "model").put("lang", lang).put("state", "downloading"))
+                val ok = try {
+                    Translations.download(lang)
+                    true
+                } catch (e: Exception) {
+                    AppLog.w("service: $lang model not downloaded ahead", e)
+                    false
                 }
-                startListening(source)
-                if (running && wantsOverlay && Settings.canDrawOverlays(this)) {
-                    // Text read off the screen is there already: only its translation is shown.
-                    overlay = CaptionOverlay(
-                        this,
-                        showOriginal = showOriginal && source != Source.SCREEN,
-                        translatedOnly = source == Source.SCREEN,
-                        source = source,
-                    ).also { it.show() }
-                }
+                CaptionBus.post(JSONObject().put("t", "model").put("lang", lang).put("state", if (ok) "ready" else "failed"))
             }
         }
     }
 
-    private fun startListening(source: Source) {
+    // The bubble.
+
+    override fun onPress() {
+        menu?.dismiss()
+        // Mirroring starts now, before the bubble goes: the picture after shows the screen without it.
+        capture?.wake()
+    }
+
+    override fun onTap() {
+        translateScreen()
+    }
+
+    override fun onHold() {
+        val b = bubble ?: return
+        menu?.show(b.bounds(), b.onRight, Prefs.load(this), subtitles)
+    }
+
+    // The bubble's menu.
+
+    override fun translateScreen() {
+        if (layer != null) return
+        val cap = capture
+        if (cap == null) {
+            askSharing()
+            return
+        }
+        cap.wake()
+        bubble?.setHidden(true)
+        val c = Prefs.load(this)
+        val l = TranslationLayer(
+            this, c.target,
+            onClosed = { layerClosed() },
+            onLanguage = { code -> retranslate(code) },
+        )
+        layer = l
+        AppLog.i("translate: started (${c.script}, into ${c.target})")
+        l.show {
+            cap.grab { bitmap ->
+                if (layer !== l) {
+                    bitmap?.recycle()
+                    return@grab
+                }
+                if (bitmap == null) {
+                    l.onError(getString(R.string.error_capture))
+                    return@grab
+                }
+                shot = bitmap
+                l.picture(bitmap, screenSize(this).first)
+                translate(bitmap, c.target, c.script)
+            }
+        }
+    }
+
+    private fun translate(bitmap: Bitmap, target: String, script: Script) {
+        translator?.cancel()
+        val l = layer ?: return
+        translator = ScreenTranslator(this, script, target).also { it.run(bitmap, statusBarHeight(), l) }
+    }
+
+    /** The same picture into another language, chosen on the translation. */
+    private fun retranslate(code: String) {
+        val c = Prefs.update(this) { it.copy(target = code) }
+        subtitleTranslator?.target = code
+        val bitmap = shot ?: return
+        layer?.reading()
+        translate(bitmap, code, c.script)
+    }
+
+    private fun layerClosed() {
+        AppLog.i("translate: closed")
+        translator?.cancel()
+        translator = null
+        layer = null
+        // The layer let the picture go.
+        shot = null
+        bubble?.setHidden(false)
+    }
+
+    override fun setSubtitles(on: Boolean) {
+        Prefs.update(this) { it.copy(subtitles = on) }
+        if (on) startSubtitles() else stopSubtitles()
+    }
+
+    override fun setTarget(code: String) {
+        val c = Prefs.update(this) { it.copy(target = code) }
+        subtitleTranslator?.target = code
+        prepare(c)
+    }
+
+    override fun openApp() {
+        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    override fun quit() {
+        end()
+    }
+
+    /** Asks for screen sharing again, over the app in front. */
+    private fun askSharing() {
+        startActivity(
+            Intent(this, StartActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(StartActivity.EXTRA_MODE, StartActivity.MODE_SHARE),
+        )
+    }
+
+    /** Asks for the microphone permission, which the phone's sound needs too, over the app in front. */
+    private fun askMicrophone() {
+        startActivity(
+            Intent(this, StartActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(StartActivity.EXTRA_MODE, StartActivity.MODE_MICROPHONE),
+        )
+    }
+
+    /** Called by [StartActivity] while it is in front, the permission just given. */
+    fun microphoneGranted() {
+        if (!running) return
+        if (!micAllowed && !foreground(true)) {
+            toast(getString(R.string.error_microphone_service))
+            return
+        }
+        startSubtitles()
+    }
+
+    /** The settings changed on the main screen while this runs. */
+    fun settingsChanged(before: Choices, now: Choices) {
+        if (!running) return
+        subtitleTranslator?.target = now.target
+        overlay?.update(now)
+        val restart = before.listen != now.listen || before.model != now.model || before.spoken != now.spoken
+        when {
+            now.subtitles && (!subtitles || restart) -> {
+                stopSubtitles()
+                startSubtitles()
+            }
+            !now.subtitles && subtitles -> stopSubtitles()
+        }
+        if (before.target != now.target || before.script != now.script) prepare(now)
+    }
+
+    // Automatic subtitles.
+
+    private fun startSubtitles() {
+        if (subtitles || !running) return
+        val c = Prefs.load(this)
+        if (!granted(Manifest.permission.RECORD_AUDIO) || !micAllowed) {
+            askMicrophone()
+            return
+        }
+        val p = projection
+        if (c.listen == Listen.SYSTEM && p == null) {
+            toast(getString(R.string.need_sharing_for_sound))
+            askSharing()
+            return
+        }
+        subtitles = true
+        AppLog.i("subtitles: starting (${c.listen}, ${c.model})")
+        overlay = CaptionOverlay(this, c).also { it.show() }
+        subtitleTranslator = SubtitleTranslator(this, c.target)
+        CaptionBus.emit(JSONObject().put("t", "state").put("state", "loading"))
+        Engine.run {
+            val error = Engine.setup(this) ?: if (Native.start(c.settingsJson())) null else getString(R.string.error_settings)
+            main.post {
+                // Stopped meanwhile: the stop queued after this start ends the engine.
+                if (!subtitles) return@post
+                if (error != null) {
+                    subtitlesFailed(error)
+                    return@post
+                }
+                startRecording(c.listen, p)
+            }
+        }
+    }
+
+    private fun startRecording(listen: Listen, p: MediaProjection?) {
         try {
-            val p = projection
-            if (source == Source.SCREEN && p != null) {
-                capture = ScreenCapture(this, p).also { it.start() }
+            val audio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            recorders += if (listen == Listen.SYSTEM && p != null) {
+                Recorder.system(p, Silence(audio) { main.post { onSilentApp() } })
             } else {
-                val audio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                p?.let { recorders += Recorder.system(it, Silence(audio) { main.post { onSilentApp() } }) }
-                if (source == Source.MIC || source == Source.BOTH) recorders += Recorder.microphone()
+                Recorder.microphone()
             }
         } catch (e: RuntimeException) {
-            fail(getString(R.string.error_recorder, e.message ?: e.toString()))
+            subtitlesFailed(getString(R.string.error_recorder, e.message ?: e.toString()))
             return
         }
         recorders.forEach { it.start() }
@@ -176,62 +415,95 @@ class CaptionService : Service() {
             } catch (e: JSONException) {
                 continue
             }
-            main.post { onEvent(event) }
+            main.post { if (gen == generation) onEngineEvent(event) }
+        }
+    }
+
+    private fun onEngineEvent(event: JSONObject) {
+        if (!subtitles) return
+        when (event.optString("t")) {
+            "ended" -> subtitlesFailed(getString(R.string.error_engine))
+            "final", "live", "clear" -> subtitleTranslator?.handle(event) { CaptionBus.emit(it) }
+            else -> CaptionBus.emit(event)
         }
     }
 
     /** Something plays, yet what is heard of it is silence: the app playing does not let its sound be captured. */
     private fun onSilentApp() {
-        if (!running) return
+        if (!subtitles) return
         CaptionBus.emit(
             JSONObject().put("t", "status").put("level", "warning")
                 .put("text", getString(R.string.silent_app)).put("ttl_ms", SILENT_NOTICE_MS),
         )
     }
 
-    private fun onEvent(event: JSONObject) {
-        if (!running) return
-        if (event.optString("t") == "ended") {
-            fail(getString(R.string.error_engine))
-            return
-        }
-        CaptionBus.emit(event)
-    }
-
-    private fun stopListening() {
+    private fun stopSubtitles() {
+        if (!subtitles) return
+        subtitles = false
+        AppLog.i("subtitles: stopped")
         // The poller ends within one poll.
         generation++
         recorders.forEach { it.stop() }
         recorders.clear()
-        capture?.stop()
-        capture = null
         overlay?.hide()
         overlay = null
-        val p = projection
-        projection = null
-        projectionCallback?.let { c -> p?.let { runCatching { it.unregisterCallback(c) } } }
-        projectionCallback = null
-        p?.stop()
+        subtitleTranslator?.close()
+        subtitleTranslator = null
         Engine.run { Native.stop() }
+        CaptionBus.emit(JSONObject().put("t", "state").put("state", "idle"))
     }
+
+    private fun subtitlesFailed(message: String) {
+        AppLog.e("subtitles: $message")
+        CaptionBus.emit(JSONObject().put("t", "status").put("level", "error").put("text", message))
+        toast(getString(R.string.subtitles_stopped_with, message))
+        stopSubtitles()
+    }
+
+    // Ending.
 
     private fun end() {
         if (running) {
             running = false
-            stopListening()
-            emitState("idle")
+            AppLog.i("service: stopped")
+            layer?.close()
+            menu?.dismiss()
+            menu = null
+            bubble?.remove()
+            bubble = null
+            stopSubtitles()
+            dropProjection()
+            warmup.execute {
+                Translations.close()
+                Recognizers.close()
+            }
+            CaptionBus.emit(JSONObject().put("t", "service").put("on", false))
         }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     private fun fail(message: String) {
-        Log.e(TAG, message)
+        AppLog.e("service: $message")
         CaptionBus.emit(JSONObject().put("t", "status").put("level", "error").put("text", message))
-        // Seen over the app in front, where the captions were to show.
-        Toast.makeText(this, getString(R.string.stopped_with, message), Toast.LENGTH_LONG).show()
+        toast(getString(R.string.stopped_with, message))
         failureNotice(message)
         end()
+    }
+
+    private fun toast(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
+
+    private fun granted(permission: String) = checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+
+    /** The status bar's height, whose text (the time, the signal) is not translated. */
+    private fun statusBarHeight(): Int {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            return wm.currentWindowMetrics.windowInsets.getInsets(WindowInsets.Type.statusBars()).top
+        }
+        return Ui.dp(this, 24f)
     }
 
     /** Stays in the notifications after the service is gone; tapping it opens Hammurabi. */
@@ -254,10 +526,6 @@ class CaptionService : Service() {
                 .setAutoCancel(true)
                 .build(),
         )
-    }
-
-    private fun emitState(state: String) {
-        CaptionBus.emit(JSONObject().put("t", "state").put("state", state))
     }
 
     private fun notification(): Notification {
@@ -287,11 +555,8 @@ class CaptionService : Service() {
 
     companion object {
         const val ACTION_START = "dev.menzo.hammurabi.START"
+        const val ACTION_SHARE = "dev.menzo.hammurabi.SHARE"
         const val ACTION_STOP = "dev.menzo.hammurabi.STOP"
-        const val EXTRA_SOURCE = "source"
-        const val EXTRA_SETTINGS = "settings"
-        const val EXTRA_OVERLAY = "overlay"
-        const val EXTRA_SHOW_ORIGINAL = "show_original"
         const val EXTRA_PROJECTION_CODE = "projection_code"
         const val EXTRA_PROJECTION_DATA = "projection_data"
         private const val CHANNEL = "captions"
@@ -299,9 +564,88 @@ class CaptionService : Service() {
         private const val FAILURE_ID = 2
         private const val SILENT_NOTICE_MS = 10_000L
 
-        /** Captions are on. Main thread only. */
+        /** Off the main thread: models loaded and downloaded ahead, freed at the end. */
+        private val warmup = Executors.newSingleThreadExecutor { r -> Thread(r, "hm-warmup") }
+
+        /** Hammurabi is on. Main thread only. */
         var running = false
             private set
+
+        /** The service while it exists, for the screens of the same app. Main thread only. */
+        var instance: CaptionService? = null
+            private set
+    }
+}
+
+/**
+ * Translates automatic subtitles with ML Kit as they come: the engine only listens. A sentence shows as
+ * heard at once and is replaced by its translation; a sentence still being heard is translated as it grows,
+ * an older translation of it dropped when a newer one is on its way.
+ */
+class SubtitleTranslator(private val context: Context, @Volatile var target: String) {
+    private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "hm-subtitles") }
+    private val main = Handler(Looper.getMainLooper())
+    private var liveSeq = 0
+    private val ready = HashSet<String>()
+
+    @Volatile
+    private var closed = false
+
+    /** [event] as it is, then with its translation, to [emit] on the main thread. */
+    fun handle(event: JSONObject, emit: (JSONObject) -> Unit) {
+        val kind = event.optString("t")
+        val text = event.optString("o")
+        emit(event)
+        if (kind == "clear" || text.isBlank() || (!event.isNull("tr") && event.optString("tr").isNotBlank())) return
+        val seq = if (kind == "live") ++liveSeq else 0
+        worker.execute {
+            // A newer version of the sentence being heard is on its way: this one would only flash.
+            if (closed || (kind == "live" && seq != liveSeq)) return@execute
+            val out = translated(event, text, emit) ?: return@execute
+            main.post { if (!closed && (kind != "live" || seq == liveSeq)) emit(out) }
+        }
+    }
+
+    private fun translated(event: JSONObject, text: String, emit: (JSONObject) -> Unit): JSONObject? {
+        val to = target
+        val lang = Languages.supported(event.optString("lang")) ?: identify(text) ?: return null
+        val out = JSONObject(event.toString())
+        if (lang == to) return out.put("same", true)
+        if (lang !in ready || to !in ready) {
+            if (!Translations.isDownloaded(lang) || !Translations.isDownloaded(to)) {
+                val line = JSONObject().put("t", "status").put("level", "info").put("ttl_ms", 20_000L)
+                    .put("text", context.getString(R.string.layer_downloading, Languages.name(lang)))
+                main.post { if (!closed) emit(line) }
+            }
+            try {
+                Translations.ensure(lang, to)
+            } catch (e: Exception) {
+                AppLog.w("subtitles: $lang → $to model not downloaded", e)
+                return null
+            }
+            ready += lang
+            ready += to
+        }
+        return try {
+            out.put("tr", Translations.translate(text, lang, to)).put("same", false)
+        } catch (e: Exception) {
+            AppLog.w("subtitles: not translated", e)
+            null
+        }
+    }
+
+    private fun identify(text: String): String? = try {
+        val tag = com.google.android.gms.tasks.Tasks.await(
+            Recognizers.languages.identifyLanguage(text), 5, java.util.concurrent.TimeUnit.SECONDS,
+        )
+        Languages.supported(tag)
+    } catch (e: Exception) {
+        null
+    }
+
+    fun close() {
+        closed = true
+        worker.shutdown()
     }
 }
 
@@ -339,7 +683,7 @@ private class Recorder(
                 while (running) {
                     val n = record.read(buf, 0, buf.size)
                     if (n < 0) {
-                        Log.w(TAG, "recording stopped ($n)")
+                        AppLog.w("subtitles: recording stopped ($n)")
                         break
                     }
                     if (n > 0) Native.feed(buf, n, rate, system)
@@ -357,7 +701,7 @@ private class Recorder(
                     }
                 }
             } catch (e: RuntimeException) {
-                Log.w(TAG, "recording failed", e)
+                AppLog.w("subtitles: recording failed", e)
             } finally {
                 runCatching { record.stop() }
                 record.release()

@@ -14,7 +14,7 @@ import org.junit.runner.RunWith
 import java.io.File
 import kotlin.math.abs
 
-/** The captions over other apps: at the bottom middle, there only while there is something to show. */
+/** The subtitles over other apps: at the bottom middle, there only while there is something to show. */
 @RunWith(AndroidJUnit4::class)
 class CaptionOverlayTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -37,31 +37,30 @@ class CaptionOverlayTest {
         CaptionBus.last.clear()
         lateinit var overlay: CaptionOverlay
         instrumentation.runOnMainSync {
-            overlay = CaptionOverlay(context, showOriginal = false, translatedOnly = true, source = Source.SCREEN)
+            overlay = CaptionOverlay(context, Choices(showOriginal = false))
             overlay.show()
         }
         SystemClock.sleep(500)
-        assertNull("nothing to show, nothing shown", OverlayArea.rect)
+        assertNull("nothing to show, nothing shown", overlay.area)
 
         // A line about how things go shows until its time is up.
         instrumentation.runOnMainSync {
-            CaptionBus.emit(JSONObject().put("t", "status").put("text", "MADLAD: 25%").put("ttl_ms", 1_500))
+            CaptionBus.emit(JSONObject().put("t", "status").put("text", "Whisper Tiny: 25%").put("ttl_ms", 1_500))
         }
-        until("the status line") { OverlayArea.rect != null }
-        val r = OverlayArea.rect!!
+        until("the status line") { overlay.area != null }
+        val r = overlay.area!!
         val screen = context.resources.displayMetrics
         assertTrue("in the lower half: ${r.toList()}", r[1] > screen.heightPixels / 2)
         assertTrue("in the middle: ${r.toList()}", abs((r[0] + r[2]) / 2 - screen.widthPixels / 2) <= 10)
-        until("the status line to go") { OverlayArea.rect == null }
+        until("the status line to go") { overlay.area == null }
 
-        // Read off the screen: an untranslated sentence does not show, its translation does.
+        // A sentence shows as heard, then as translated.
         val final = JSONObject().put("t", "final").put("id", 1).put("o", "See you tomorrow").put("same", false)
         instrumentation.runOnMainSync { CaptionBus.emit(JSONObject(final.toString()).put("tr", JSONObject.NULL)) }
-        SystemClock.sleep(700)
-        assertNull("untranslated, not shown", OverlayArea.rect)
+        until("the sentence as heard") { overlay.area != null }
         instrumentation.runOnMainSync { CaptionBus.emit(JSONObject(final.toString()).put("tr", "Yarın görüşürüz")) }
-        until("the translation") { OverlayArea.rect != null }
-        assertNotNull(OverlayArea.rect)
+        SystemClock.sleep(300)
+        assertNotNull(overlay.area)
         // A post's translation, longer: how it looks goes to files/overlay.jpg (CI shows it).
         instrumentation.runOnMainSync {
             CaptionBus.emit(
@@ -77,7 +76,7 @@ class CaptionOverlayTest {
         }
 
         instrumentation.runOnMainSync { overlay.hide() }
-        assertNull(OverlayArea.rect)
+        assertNull(overlay.area)
         CaptionBus.last.clear()
     }
 }

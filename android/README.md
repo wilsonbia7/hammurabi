@@ -1,41 +1,46 @@
 # Hammurabi for Android
 
-Live captions and translation on a phone, with the desktop app's engine: the same voice detection,
-Whisper, sentence assembly and translators, built for Android and run on the phone itself.
+Translate what is on the phone's screen without leaving the app it is in: a post, comments, a meme,
+a game. Started once, a small bubble stays at the screen's edge over every app.
 
-- **Text on screen** (the first choice): foreign text anywhere on the screen, in any app (a post,
-  comments, the words on a meme, a video's or a game's subtitles), is read and translated while
-  the user scrolls or plays. The translation shows at the bottom middle, like a film's subtitles.
-- **The phone's sound**: what videos and games say, heard and translated.
-- **Microphone**: people talking next to the phone.
+- **Tap the bubble**: the screen is translated in place, as Google Lens does. Each block of text is
+  covered with its translation, in its own colours; text already in the chosen language is left as
+  it is. Tap a translation to see its original and copy it; tap anywhere else, or Back, to close.
+- **Hold the bubble**: its menu — translate the screen, automatic subtitles on or off, the language,
+  open the app, close Hammurabi. Drag it to move it; it goes back to the nearest edge.
+- **Automatic subtitles** (off at first): speech in videos and games (the phone's sound) or people
+  nearby (the microphone), heard with the desktop app's engine and translated at the bottom middle,
+  like a film's subtitles.
 
-Captions show over other apps, and on the app's own screen. A Quick Settings tile turns them on and
-off from any app (Android 13 offers to add it from the app).
+A Quick Settings tile turns Hammurabi on and off from any app (Android 13 offers to add it).
 
-Early work: it builds, but has been tried on few phones yet.
+Early work: tried on emulators and few phones yet.
 
 ## How it works
 
-- `app/` is a small Kotlin app with no libraries but ONNX Runtime. `CaptionService` records the
-  microphone and/or what other apps play (`AudioPlaybackCapture`, Android 10+), 100 ms at a time.
-- `rust/` is a JNI library around the `hammurabi` crate. The audio goes into
-  `Engine::spawn_fed`, the engine the CLI also feeds, and its events come back as JSON. Captions use
-  the JSON the desktop's browser source sends (`src/ui/web.rs`).
-- `CaptionOverlay` draws captions over other apps, at the bottom middle; touches go through to the
-  app below. Until there are captions it says how things go (a model downloading, an error).
-- Text on screen: `ScreenCapture` sends a few pictures of the whole screen a second, with where our
-  captions are in them. `rust/src/page.rs` reads a picture that changed at most twice a second:
-  PaddleOCR's PP-OCRv4 mobile models (`rust/src/ocr.rs`, on the ONNX Runtime the app has anyway)
-  find the rows of text and read them, the rows are stacked into paragraphs, and a paragraph goes to
-  the engine (`Engine::spawn_fed_screen`) once it reads alike in the same place twice on end, which
-  text being scrolled does not, and only once while it stays. Text already in the target language
-  and apps' buttons and labels are skipped (`rust/src/lang.rs`: whatlang, and for short text the
-  words common in Turkish and English); our own captions are blanked out of the picture first. The
-  build takes the models from RapidOCR's wheel on PyPI, checked against its hash, into the APK's
-  assets (`fetchOcrModels`). `rust/tests/page_pictures.py` makes phone screenshots the reader is
-  tested on.
+- `app/` is a small Kotlin app. `CaptionService` runs while Hammurabi is on: the bubble
+  (`Bubble.kt`), the screen sharing (MediaProjection), and subtitles when on.
+- Translating the screen: as the bubble is pressed, `ScreenCapture` starts mirroring the screen; the
+  bubble goes, the empty `TranslationLayer` comes over the screen, and the picture after that is
+  taken (the mirror sleeps again between taps, so it costs nothing the rest of the time).
+  `ScreenTranslator` reads it with Google's ML Kit (text recognition, bundled: Latin, or Chinese,
+  Japanese or Korean with Latin), tells each block's language (ML Kit language identification;
+  short blocks take the screen's main language), and translates those not in the target language
+  with ML Kit's on-device translation, top to bottom. `TranslationLayer` draws each translation over
+  its block in the block's colours, fitted to its size, as it comes.
+- Subtitles: `rust/` is a JNI library around the `hammurabi` crate. The audio goes into
+  `Engine::spawn_fed`, the engine the CLI also feeds; it only listens (Whisper). Its events come
+  back as JSON, as the desktop's browser source sends them (`src/ui/web.rs`), with the language
+  heard; `SubtitleTranslator` translates them with ML Kit, and `CaptionOverlay` shows them.
+- `AppLog` keeps the app's own log in a file (crashes too); "Copy the error log" on the main screen
+  copies it with the phone and the settings, to send when something goes wrong.
 
-Nothing leaves the phone but the one-time model downloads from Hugging Face.
+Nothing leaves the phone but the one-time model downloads: a translation model per language (about
+30 MB, from Google) and the speech model (from Hugging Face).
+
+ML Kit is Google's and not open source; its on-device translation may be used on phones, tablets and
+computers, not on TVs, cars or other embedded devices, and its translations carry Google's
+attribution ("powered by Google Translate") and disclaimer, as its terms ask.
 
 ## Build
 
@@ -56,28 +61,26 @@ needs a key of its own.
 
 ## Tests
 
-- `cd rust && cargo test`: the page reader, the language filter and the recognizer's pieces. With
-  the OCR models and the pictures of `rust/tests/page_pictures.py`, `cargo test -- --ignored` reads
-  phone screenshots (a Turkish feed with English posts, scrolled, in dark mode, a video with a
-  subtitle, our own caption over a feed).
-- `./gradlew connectedDebugAndroidTest` on a phone or an emulator (`app/src/androidTest`): captions,
-  choices, the overlay, and the engine end to end through the app's native calls on a drawn feed.
-- CI runs those on an emulator, then uses the app as a person would (`smoke.sh`): starts Text on
-  screen, checks Hammurabi's own screen and then another app's are read (its English, not its
-  Turkish), stops, and starts and stops from the Quick Settings tile. Lint runs on every build.
+- `cd rust && cargo test`: the bridge's settings and events.
+- `./gradlew connectedDebugAndroidTest` on a phone or an emulator (`app/src/androidTest`): the
+  settings and languages, how lines become paragraphs, the subtitles, the engine through the app's
+  native calls, the screen translated end to end with ML Kit on a drawn feed (English translated,
+  Turkish left, numbers skipped), and the translated layer over another app, whose picture goes to
+  `files/layer.jpg`.
+- CI runs those on an emulator, then uses the app as a person would (`smoke.sh`): starts it, taps
+  the bubble over another app and checks its English is translated, closes the translation with
+  Back, holds the bubble for its menu, stops, and starts and stops from the Quick Settings tile.
+  Lint runs on every build.
 
 ## What it cannot do
 
-- Apps that forbid capture (Netflix and most paid video, banking apps) give silence, and their
-  pictures come out black. YouTube and most others can be heard and read.
+- Apps that forbid capture (Netflix and most paid video, banking apps) come out black, and their
+  sound silent.
+- Cyrillic (Russian) and Arabic letters cannot be read: ML Kit's text recognition has no such
+  models.
 - Calls are never captured: Android keeps them out of playback capture.
-- The speech model runs on the processor. "Hearing takes … ms" under the button shows how long one
+- The speech model runs on the processor. "Hearing time … ms" on the main screen shows how long one
   run takes; above about a second the phone falls behind. Tiny is the model for most phones.
-- The built-in translator (MADLAD, 1.7 GB) is heavy for a phone: it needs the memory and is slow on
-  mid-range processors.
-- Text on screen reads Latin and Chinese letters (without some accents: ç, ş, ğ, ı, ö, ñ, ß); not
-  yet Arabic, Cyrillic, Japanese or Korean. Reading the whole screen twice a second while a video
-  plays keeps the processor busy, and the battery goes faster.
-- Covering a subtitle with its translation, as the desktop does, needs the picture of what is under
-  our captions, which Android does not give; the translation stands at the bottom middle.
+- Screen sharing ends when Android ends it (the screen locked, or stopped from the status bar); the
+  bubble then shows a red dot, and a tap asks for it again.
 - Read aloud and Windows Live Captions are desktop-only.

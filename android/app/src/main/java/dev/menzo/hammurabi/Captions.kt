@@ -2,6 +2,8 @@ package dev.menzo.hammurabi
 
 import android.graphics.Color
 import android.graphics.Typeface
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -11,11 +13,12 @@ import android.text.style.StyleSpan
 import org.json.JSONObject
 import java.text.Normalizer
 
-/** Engine events, handed out on the main thread to whoever shows them. */
+/** Hammurabi's events (the engine's, the service's), handed out on the main thread to whoever shows them. */
 object CaptionBus {
     private val listeners = mutableListOf<(JSONObject) -> Unit>()
+    private val main by lazy { Handler(Looper.getMainLooper()) }
 
-    /** The last state, status and speed, for a screen that opens while captions run. */
+    /** The last state, status and speed, for a screen that opens while subtitles run. */
     val last = mutableMapOf<String, JSONObject>()
 
     fun add(listener: (JSONObject) -> Unit) {
@@ -26,9 +29,15 @@ object CaptionBus {
         listeners -= listener
     }
 
+    /** [emit] from another thread. */
+    fun post(event: JSONObject) {
+        main.post { emit(event) }
+    }
+
+    /** Main thread only. */
     fun emit(event: JSONObject) {
         val t = event.optString("t")
-        if (t == "state" || t == "status" || t == "stats" || t == "translated" || t == "progress") last[t] = event
+        if (t == "state" || t == "status" || t == "stats" || t == "progress") last[t] = event
         listeners.toList().forEach { it(event) }
     }
 }
@@ -74,25 +83,19 @@ class Captions(private val cues: Int = 2, private val holdMs: Long = 4_000) {
     )
 
     /**
-     * The text to draw: each translation large with its original small under it, or the original large
-     * when there is no translation (yet) or it already is in the target language. [translatedOnly]: only the
-     * translations, for text read off the screen, whose original is on screen already. Empty = nothing to show.
+     * The text to draw: each translation large with its original small under it ([showOriginal]), or the
+     * original large when there is no translation (yet) or it already is in the target language. Empty =
+     * nothing to show.
      */
-    fun text(
-        bigPx: Int,
-        smallPx: Int,
-        showOriginal: Boolean,
-        translatedOnly: Boolean = false,
-        now: Long = SystemClock.uptimeMillis(),
-    ): CharSequence {
+    fun text(bigPx: Int, smallPx: Int, showOriginal: Boolean, now: Long = SystemClock.uptimeMillis()): CharSequence {
         finals.values.removeAll { now - it.at > it.hold(holdMs) }
         val out = SpannableStringBuilder()
         for (c in finals.values + listOfNotNull(live)) {
             val translation = c.translation
             if (translation != null) {
                 line(out, translation, bigPx, Color.WHITE, bold = true)
-                if (showOriginal && !translatedOnly) line(out, c.original, smallPx, ORIGINAL, bold = false)
-            } else if (!translatedOnly) {
+                if (showOriginal) line(out, c.original, smallPx, ORIGINAL, bold = false)
+            } else {
                 line(out, c.original, bigPx, Color.WHITE, bold = true)
             }
         }
@@ -108,14 +111,14 @@ class Captions(private val cues: Int = 2, private val holdMs: Long = 4_000) {
         if (bold) out.setSpan(StyleSpan(Typeface.BOLD), start, out.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 
-    private companion object {
+    companion object {
         /** The desktop's colour for originals (`CaptionStyle::orig_color`). */
-        val ORIGINAL = Color.parseColor("#ffe066")
-        const val MAX_HOLD_MS = 12_000L
+        private val ORIGINAL = Color.parseColor("#ffe066")
+        private const val MAX_HOLD_MS = 12_000L
 
         /**
-         * Whether a translation only repeats its original: text that was in the target language already, as
-         * the screen's own (a recognizer reads it without some letters, which the translation puts back).
+         * Whether a translation only repeats its original: text that was in the target language already (read
+         * off the screen without some letters, which the translation puts back), or a name.
          */
         fun alike(a: String, b: String): Boolean {
             val (x, y) = key(a) to key(b)

@@ -2,160 +2,307 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fitsSystemWindows="true">
+    android:background="@color/bg"
+    android:fillViewport="true">
 
     <LinearLayout
+        android:id="@+id/content"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="18dp">
 
         <TextView
-            android:id="@+id/captions"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@drawable/captions_background"
-            android:gravity="center"
-            android:minHeight="140dp"
-            android:padding="14dp"
-            android:shadowColor="#ff000000"
-            android:shadowDy="1"
-            android:shadowRadius="4"
-            android:text="@string/captions_hint"
-            android:textColor="#ccffffff"
-            android:textSize="17sp" />
-
-        <Button
-            android:id="@+id/toggle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:minHeight="56dp"
-            android:text="@string/start"
-            android:textSize="18sp" />
-
-        <Button
-            android:id="@+id/add_tile"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/add_tile"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/status"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:textSize="15sp" />
+            android:text="@string/app_name"
+            android:textColor="@color/text"
+            android:textSize="30sp"
+            android:textStyle="bold" />
 
         <TextView
-            android:id="@+id/stats"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:alpha="0.7"
-            android:textSize="13sp" />
+            style="@style/Body"
+            android:text="@string/tagline" />
 
-        <TextView
-            style="@style/Label"
-            android:text="@string/label_source" />
+        <!-- On and off. -->
+        <LinearLayout style="@style/Card">
 
-        <Spinner
-            android:id="@+id/source"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-        <TextView
-            android:id="@+id/projection_note"
-            style="@style/Note"
-            android:text="@string/projection_note"
-            android:visibility="gone" />
+                <View
+                    android:id="@+id/state_dot"
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:background="@drawable/dot_off" />
 
-        <TextView
-            android:id="@+id/screen_note"
-            style="@style/Note"
-            android:text="@string/screen_note"
-            android:visibility="gone" />
+                <TextView
+                    android:id="@+id/state_text"
+                    style="@style/CardTitle"
+                    android:layout_marginStart="10dp"
+                    android:text="@string/state_off" />
+            </LinearLayout>
 
-        <TextView
-            style="@style/Label"
-            android:text="@string/label_spoken" />
+            <TextView
+                android:id="@+id/state_note"
+                style="@style/Body"
+                android:text="@string/state_off_note" />
 
-        <Spinner
-            android:id="@+id/spoken"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
+            <Button
+                android:id="@+id/toggle"
+                style="@style/PrimaryButton"
+                android:layout_marginTop="16dp"
+                android:text="@string/start" />
 
-        <Switch
-            android:id="@+id/translate"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:minHeight="48dp"
-            android:text="@string/translate"
-            android:textSize="16sp" />
+            <TextView
+                android:id="@+id/status"
+                style="@style/Note"
+                android:visibility="gone" />
+        </LinearLayout>
 
-        <TextView
-            style="@style/Label"
-            android:text="@string/label_target" />
+        <!-- How to use it. -->
+        <LinearLayout style="@style/Card">
 
-        <Spinner
-            android:id="@+id/target"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
+            <TextView
+                style="@style/CardTitle"
+                android:text="@string/howto_title" />
 
-        <TextView
-            android:id="@+id/translate_note"
-            style="@style/Note" />
+            <LinearLayout style="@style/StepRow">
 
-        <TextView
-            android:id="@+id/label_model"
-            style="@style/Label"
-            android:text="@string/label_model" />
+                <TextView
+                    style="@style/Step"
+                    android:text="1" />
 
-        <Spinner
-            android:id="@+id/model"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
+                <TextView
+                    style="@style/StepText"
+                    android:text="@string/howto_1" />
+            </LinearLayout>
 
-        <TextView
-            android:id="@+id/model_note"
-            style="@style/Note"
-            android:text="@string/model_note" />
+            <LinearLayout style="@style/StepRow">
 
-        <Switch
-            android:id="@+id/overlay"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:minHeight="48dp"
-            android:text="@string/overlay"
-            android:textSize="16sp" />
+                <TextView
+                    style="@style/Step"
+                    android:text="2" />
 
-        <Switch
-            android:id="@+id/show_original"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="48dp"
-            android:text="@string/show_original"
-            android:textSize="16sp" />
+                <TextView
+                    style="@style/StepText"
+                    android:text="@string/howto_2" />
+            </LinearLayout>
 
-        <TextView
-            style="@style/Label"
-            android:text="@string/label_threads" />
+            <LinearLayout style="@style/StepRow">
 
-        <Spinner
-            android:id="@+id/threads"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
+                <TextView
+                    style="@style/Step"
+                    android:text="3" />
 
-        <TextView
-            style="@style/Note"
-            android:text="@string/threads_note" />
+                <TextView
+                    style="@style/StepText"
+                    android:text="@string/howto_3" />
+            </LinearLayout>
 
-        <TextView
-            style="@style/Note"
-            android:layout_marginTop="24dp"
-            android:text="@string/privacy" />
+            <LinearLayout style="@style/StepRow">
+
+                <TextView
+                    style="@style/Step"
+                    android:text="4" />
+
+                <TextView
+                    style="@style/StepText"
+                    android:text="@string/howto_4" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Translation. -->
+        <LinearLayout style="@style/Card">
+
+            <TextView
+                style="@style/CardTitle"
+                android:text="@string/translation_title" />
+
+            <TextView
+                style="@style/Label"
+                android:layout_marginTop="12dp"
+                android:text="@string/label_target" />
+
+            <Spinner
+                android:id="@+id/target"
+                style="@style/Field" />
+
+            <TextView
+                android:id="@+id/model_status"
+                style="@style/Note" />
+
+            <Button
+                android:id="@+id/download"
+                style="@style/SecondaryButton"
+                android:layout_marginTop="10dp"
+                android:text="@string/download_now"
+                android:visibility="gone" />
+
+            <TextView
+                style="@style/Label"
+                android:text="@string/label_script" />
+
+            <Spinner
+                android:id="@+id/script"
+                style="@style/Field" />
+
+            <TextView
+                style="@style/Note"
+                android:text="@string/script_note" />
+        </LinearLayout>
+
+        <!-- Automatic subtitles. -->
+        <LinearLayout style="@style/Card">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/CardTitle"
+                        android:text="@string/subtitles_title" />
+
+                    <TextView
+                        style="@style/Body"
+                        android:text="@string/subtitles_note" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/subtitles"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:contentDescription="@string/subtitles_title"
+                    android:minHeight="48dp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/engine_note"
+                style="@style/Note"
+                android:textColor="@color/danger"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/subtitle_options"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    style="@style/Label"
+                    android:text="@string/label_listen" />
+
+                <Spinner
+                    android:id="@+id/listen"
+                    style="@style/Field" />
+
+                <TextView
+                    android:id="@+id/listen_note"
+                    style="@style/Note"
+                    android:text="@string/listen_note" />
+
+                <TextView
+                    style="@style/Label"
+                    android:text="@string/label_spoken" />
+
+                <Spinner
+                    android:id="@+id/spoken"
+                    style="@style/Field" />
+
+                <TextView
+                    style="@style/Label"
+                    android:text="@string/label_model" />
+
+                <Spinner
+                    android:id="@+id/model"
+                    style="@style/Field" />
+
+                <TextView
+                    style="@style/Note"
+                    android:text="@string/model_note" />
+
+                <TextView
+                    style="@style/Label"
+                    android:text="@string/label_size" />
+
+                <Spinner
+                    android:id="@+id/text_size"
+                    style="@style/Field" />
+
+                <Switch
+                    android:id="@+id/show_original"
+                    style="@style/SwitchRow"
+                    android:text="@string/show_original" />
+
+                <TextView
+                    android:id="@+id/stats"
+                    style="@style/Note" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- More. -->
+        <LinearLayout style="@style/Card">
+
+            <TextView
+                style="@style/CardTitle"
+                android:text="@string/more_title" />
+
+            <Button
+                android:id="@+id/add_tile"
+                style="@style/SecondaryButton"
+                android:layout_marginTop="14dp"
+                android:text="@string/add_tile"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/copy_log"
+                style="@style/SecondaryButton"
+                android:layout_marginTop="10dp"
+                android:text="@string/copy_log" />
+
+            <TextView
+                style="@style/Note"
+                android:text="@string/copy_log_note" />
+        </LinearLayout>
+
+        <!-- About. -->
+        <LinearLayout
+            style="@style/Card"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                style="@style/CardTitle"
+                android:text="@string/about_title" />
+
+            <TextView
+                style="@style/Body"
+                android:text="@string/privacy" />
+
+            <TextView
+                style="@style/Body"
+                android:text="@string/about_google" />
+
+            <TextView
+                style="@style/Note"
+                android:text="@string/disclaimer" />
+
+            <TextView
+                android:id="@+id/version"
+                style="@style/Note" />
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>

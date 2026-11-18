@@ -3,11 +3,12 @@ package dev.menzo.hammurabi
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** What the captions show, on Android's own text classes. */
+/** What the subtitles show, on Android's own text classes. */
 @RunWith(AndroidJUnit4::class)
 class CaptionsTest {
     private fun final(id: Int, o: String, tr: String?, same: Boolean = false) =
@@ -22,19 +23,26 @@ class CaptionsTest {
     }
 
     @Test
-    fun readOffTheScreenOnlyTranslationsShow() {
+    fun aSentenceShowsAsHeardUntilItsTranslationComes() {
         val c = Captions()
-        // Not translated yet; in the target language already; translated into the same words.
-        c.apply(final(1, "Where are you going?", null), now = 0L)
-        assertEquals("", c.text(40, 20, showOriginal = true, translatedOnly = true, now = 0L).toString())
-        c.apply(final(2, "Bugün hava güzel", null, same = true), now = 0L)
-        assertEquals("", c.text(40, 20, showOriginal = true, translatedOnly = true, now = 0L).toString())
-        c.apply(final(3, "Bugun hava cok guzel", "Bugün hava çok güzel."), now = 0L)
-        assertEquals("", c.text(40, 20, showOriginal = true, translatedOnly = true, now = 0L).toString())
-        c.apply(final(4, "See you tomorrow", "Yarın görüşürüz"), now = 0L)
-        assertEquals("Yarın görüşürüz", c.text(40, 20, showOriginal = true, translatedOnly = true, now = 0L).toString())
-        // Listening, an untranslated sentence shows as heard.
-        assertTrue(c.text(40, 20, showOriginal = true, now = 0L).toString().startsWith("Bugun hava cok guzel"))
+        c.apply(final(1, "See you tomorrow", null), now = 0L)
+        assertEquals("See you tomorrow", c.text(40, 20, showOriginal = true, now = 0L).toString())
+        // Its translation replaces it: the same sentence, not a second one.
+        c.apply(final(1, "See you tomorrow", "Yarın görüşürüz"), now = 100L)
+        assertEquals("Yarın görüşürüz", c.text(40, 20, showOriginal = false, now = 100L).toString())
+        // In the target language already: as heard.
+        c.apply(final(2, "Bugün hava güzel", null, same = true), now = 200L)
+        assertTrue(c.text(40, 20, showOriginal = false, now = 200L).toString().endsWith("Bugün hava güzel"))
+    }
+
+    @Test
+    fun aTranslationThatOnlyRepeatsItsOriginalIsTold() {
+        // Read without its accents, given back with them; a name; the same words.
+        assertTrue(Captions.alike("Bugun hava cok guzel", "Bugün hava çok güzel."))
+        assertTrue(Captions.alike("John Carter", "John Carter"))
+        assertTrue(Captions.alike("Çok güzel!", "Cok guzel"))
+        assertFalse(Captions.alike("See you tomorrow", "Yarın görüşürüz"))
+        assertFalse(Captions.alike("Like", "Beğen"))
     }
 
     @Test

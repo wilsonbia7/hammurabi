@@ -6,11 +6,10 @@ import android.content.Intent
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
-import android.util.Log
 
 /**
- * Hammurabi's Quick Settings tile: captions on and off from any app, without going to Hammurabi. On, it asks
- * for screen sharing over the app in front (`StartActivity`) and starts what was chosen last.
+ * Hammurabi's Quick Settings tile: on and off from any app, without going to Hammurabi. On, it asks for
+ * screen sharing over the app in front (`StartActivity`), and the bubble shows.
  */
 class CaptionTile : TileService() {
     override fun onStartListening() {
@@ -20,7 +19,7 @@ class CaptionTile : TileService() {
 
     override fun onClick() {
         super.onClick()
-        Log.i("hammurabi", "tile: clicked, captions ${if (CaptionService.running) "on" else "off"}")
+        AppLog.i("tile: clicked, Hammurabi ${if (CaptionService.running) "on" else "off"}")
         if (CaptionService.running) {
             startService(Intent(this, CaptionService::class.java).setAction(CaptionService.ACTION_STOP))
             update(false)

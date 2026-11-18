@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A choice to tap: a rounded field with an arrow at its end. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="#22888888">
+    <item>
+        <layer-list>
+            <item>
+                <shape android:shape="rectangle">
+                    <solid android:color="@color/field" />
+                    <corners android:radius="14dp" />
+                </shape>
+            </item>
+            <item android:drawable="@drawable/ic_arrow_down" android:end="14dp" android:gravity="end|center_vertical" android:width="20dp" android:height="20dp" />
+        </layer-list>
+    </item>
+</ripple>

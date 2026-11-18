@@ -7,7 +7,6 @@ import android.app.StatusBarManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
@@ -15,7 +14,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import android.util.TypedValue
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
@@ -26,147 +24,152 @@ import android.widget.TextView
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
+import kotlin.concurrent.thread
 
-/** The one screen: captions on top, the button, and the choices below. */
+/** The main screen: on and off, how to use it, and the settings, in cards. */
 class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
-    private val captions = Captions()
 
-    private lateinit var captionsView: TextView
+    private lateinit var stateDot: View
+    private lateinit var stateText: TextView
+    private lateinit var stateNote: TextView
     private lateinit var toggle: Button
     private lateinit var statusView: TextView
-    private lateinit var statsView: TextView
-    private lateinit var source: Spinner
-    private lateinit var spoken: Spinner
-    private lateinit var translate: Switch
     private lateinit var target: Spinner
-    private lateinit var translateNote: TextView
+    private lateinit var modelStatus: TextView
+    private lateinit var download: Button
+    private lateinit var script: Spinner
+    private lateinit var subtitles: Switch
+    private lateinit var subtitleOptions: View
+    private lateinit var listen: Spinner
+    private lateinit var listenNote: TextView
+    private lateinit var spoken: Spinner
     private lateinit var model: Spinner
-    private lateinit var overlay: Switch
+    private lateinit var textSize: Spinner
     private lateinit var showOriginal: Switch
-    private lateinit var threads: Spinner
-    private lateinit var modelViews: List<View>
-    private lateinit var screenNote: TextView
-    private lateinit var projectionNote: TextView
-    private lateinit var addTile: Button
+    private lateinit var stats: TextView
+    private lateinit var engineNote: TextView
 
-    // Fallbacks for when the engine does not load; `Native.info` replaces them.
-    private var sourceLangs = listOf("en", "tr")
-    private var targetLangs = listOf("tr", "en")
+    private val targets = Languages.byName()
+
+    // Until the engine tells its own (`Native.info`).
+    private var spokenLangs = listOf("en", "tr")
     private var models = listOf("Tiny", "Base", "Small")
     private var modelInfo = JSONArray()
-    private var translatorBytes = 0L
-    private val threadChoices = listOf(0, 2, 4, 6, 8)
+    private var engineError: String? = null
 
     private var current: Choices? = null
-    private var defaultStatusColor = Color.GRAY
-
-    /** The last speech model run and translation, for the line under the status. */
-    private var hearing: String? = null
-    private var translating: String? = null
-    private var clearStatus: Runnable? = null
     private var notificationsAsked = false
     private var overlayAsked = false
 
-    private val listener: (JSONObject) -> Unit = { onEvent(it) }
+    /** Start was tapped and waits for the overlay permission, given in Android's settings. */
+    private var startPending = false
+    private var downloading: String? = null
+    private var clearStatus: Runnable? = null
 
-    /** Lets captions whose time is up go, between events. */
-    private val tick = object : Runnable {
-        override fun run() {
-            renderCaptions()
-            handler.postDelayed(this, 500)
-        }
-    }
+    private val listener: (JSONObject) -> Unit = { onEvent(it) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        captionsView = requireViewById(R.id.captions)
+        val content = requireViewById<View>(R.id.content)
+        val pad = content.paddingLeft
+        // The screen reaches under the status and navigation bars: the content keeps clear of them.
+        content.setOnApplyWindowInsetsListener { v, insets ->
+            @Suppress("DEPRECATION")
+            v.setPadding(
+                pad + insets.systemWindowInsetLeft, pad + insets.systemWindowInsetTop,
+                pad + insets.systemWindowInsetRight, pad + insets.systemWindowInsetBottom,
+            )
+            insets
+        }
+        stateDot = requireViewById(R.id.state_dot)
+        stateText = requireViewById(R.id.state_text)
+        stateNote = requireViewById(R.id.state_note)
         toggle = requireViewById(R.id.toggle)
         statusView = requireViewById(R.id.status)
-        statsView = requireViewById(R.id.stats)
-        source = requireViewById(R.id.source)
-        spoken = requireViewById(R.id.spoken)
-        translate = requireViewById(R.id.translate)
         target = requireViewById(R.id.target)
-        translateNote = requireViewById(R.id.translate_note)
+        modelStatus = requireViewById(R.id.model_status)
+        download = requireViewById(R.id.download)
+        script = requireViewById(R.id.script)
+        subtitles = requireViewById(R.id.subtitles)
+        subtitleOptions = requireViewById(R.id.subtitle_options)
+        listen = requireViewById(R.id.listen)
+        listenNote = requireViewById(R.id.listen_note)
+        spoken = requireViewById(R.id.spoken)
         model = requireViewById(R.id.model)
-        overlay = requireViewById(R.id.overlay)
+        textSize = requireViewById(R.id.text_size)
         showOriginal = requireViewById(R.id.show_original)
-        threads = requireViewById(R.id.threads)
-        // Typed: left to infer, the list's array is made a Spinner[] and the labels do not fit in it.
-        modelViews = listOf<View>(
-            requireViewById<TextView>(R.id.label_model),
-            model,
-            requireViewById<TextView>(R.id.model_note),
-        )
-        screenNote = requireViewById(R.id.screen_note)
-        projectionNote = requireViewById(R.id.projection_note)
-        addTile = requireViewById(R.id.add_tile)
-        defaultStatusColor = statusView.currentTextColor
+        stats = requireViewById(R.id.stats)
+        engineNote = requireViewById(R.id.engine_note)
+
+        val addTile = requireViewById<Button>(R.id.add_tile)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             addTile.visibility = View.VISIBLE
             addTile.setOnClickListener { askToAddTile() }
         }
-
-        val error = Engine.setup(this)
-        if (error == null) {
-            readInfo()
-        } else {
-            status(getString(R.string.setup_failed, error), error = true)
-            toggle.isEnabled = false
+        requireViewById<Button>(R.id.copy_log).setOnClickListener {
+            Ui.copy(this, "Hammurabi", AppLog.report(this))
         }
-        fill(Prefs.load(this))
+        requireViewById<TextView>(R.id.version).text = getString(R.string.version, versionName())
+        download.setOnClickListener { downloadTarget() }
         toggle.setOnClickListener { onToggle() }
+
+        // The engine is for subtitles only: the screen is translated without it.
+        engineError = Engine.setup(this)
+        if (engineError == null) readInfo()
+        fill(Prefs.load(this))
     }
 
     override fun onStart() {
         super.onStart()
         CaptionBus.add(listener)
-        // What happened while this screen was away.
-        CaptionBus.last.values.toList().forEach { showMeta(it) }
-        updateToggle()
-        handler.post(tick)
+        CaptionBus.last.values.toList().forEach { onEvent(it) }
+        updateState()
+        refreshModel()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Back from Android's settings with the overlay permission: Start goes on.
+        if (startPending && Settings.canDrawOverlays(this)) {
+            startPending = false
+            onToggle()
+        }
     }
 
     override fun onStop() {
         CaptionBus.remove(listener)
-        handler.removeCallbacks(tick)
         super.onStop()
     }
 
     private fun readInfo() {
         val info = JSONObject(Native.info())
-        sourceLangs = info.getJSONArray("source").strings()
-        targetLangs = info.getJSONArray("target").strings()
+        spokenLangs = info.getJSONArray("source").strings()
         modelInfo = info.getJSONArray("models")
         models = (0 until modelInfo.length()).map { modelInfo.getJSONObject(it).getString("id") }
-        translatorBytes = info.optJSONObject("translator")?.optLong("bytes") ?: 0L
     }
 
     private fun fill(c: Choices) {
-        // In the order of `Source`.
-        source.adapter = adapter(
-            listOf(
-                getString(R.string.source_screen),
-                getString(R.string.source_system),
-                getString(R.string.source_mic),
-                getString(R.string.source_both),
-            ),
+        target.adapter = adapter(targets.map { Languages.name(it) })
+        target.setSelection(targets.indexOf(c.target).coerceAtLeast(0))
+        // In the order of `Script`.
+        script.adapter = adapter(
+            listOf(R.string.script_latin, R.string.script_chinese, R.string.script_japanese, R.string.script_korean)
+                .map { getString(it) },
         )
-        source.setSelection(c.source.ordinal)
-        spoken.adapter = adapter(listOf(getString(R.string.spoken_auto)) + sourceLangs.map { languageName(it) })
-        spoken.setSelection(c.spoken?.let { sourceLangs.indexOf(it) + 1 } ?: 0)
-        translate.isChecked = c.translate
-        target.adapter = adapter(targetLangs.map { languageName(it) })
-        target.setSelection(targetLangs.indexOf(c.target).coerceAtLeast(0))
+        script.setSelection(c.script.ordinal)
+        subtitles.isChecked = c.subtitles
+        // In the order of `Listen`.
+        listen.adapter = adapter(listOf(getString(R.string.listen_system), getString(R.string.listen_mic)))
+        listen.setSelection(c.listen.ordinal)
+        spoken.adapter = adapter(listOf(getString(R.string.spoken_auto)) + spokenLangs.map { Languages.name(it) })
+        spoken.setSelection(c.spoken?.let { spokenLangs.indexOf(it) + 1 } ?: 0)
         model.adapter = adapter(models.indices.map { modelLabel(it) })
         model.setSelection(models.indexOf(c.model).coerceAtLeast(0))
-        overlay.isChecked = c.overlay
+        textSize.adapter = adapter(listOf(getString(R.string.size_small), getString(R.string.size_medium), getString(R.string.size_large)))
+        textSize.setSelection(c.textSize)
         showOriginal.isChecked = c.showOriginal
-        threads.adapter = adapter(threadChoices.map { if (it == 0) getString(R.string.threads_auto) else it.toString() })
-        threads.setSelection(threadChoices.indexOf(c.threads).coerceAtLeast(0))
-        translateNote.text = getString(R.string.translate_note, size(translatorBytes))
         current = readChoices()
         updateEnabled()
         // Spinners report their first selection later on their own; `onChoicesChanged` ignores
@@ -178,20 +181,32 @@ class MainActivity : Activity() {
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
-        listOf(source, spoken, target, model, threads).forEach { it.onItemSelectedListener = changed }
-        listOf(translate, overlay, showOriginal).forEach { s -> s.setOnCheckedChangeListener { _, _ -> onChoicesChanged() } }
+        listOf(target, script, listen, spoken, model, textSize).forEach { it.onItemSelectedListener = changed }
+        showOriginal.setOnCheckedChangeListener { _, _ -> onChoicesChanged() }
+        subtitles.setOnCheckedChangeListener { _, on ->
+            updateEnabled()
+            if (on && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                // Saved once the microphone is allowed.
+                requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MICROPHONE)
+            } else {
+                onChoicesChanged()
+            }
+        }
     }
 
-    private fun readChoices() = Choices(
-        source = Source.entries[source.selectedItemPosition.coerceIn(0, Source.entries.size - 1)],
-        spoken = spoken.selectedItemPosition.let { if (it <= 0) null else sourceLangs.getOrNull(it - 1) },
-        translate = translate.isChecked,
-        target = targetLangs.getOrElse(target.selectedItemPosition) { "en" },
-        model = models.getOrElse(model.selectedItemPosition) { "Tiny" },
-        overlay = overlay.isChecked,
-        showOriginal = showOriginal.isChecked,
-        threads = threadChoices.getOrElse(threads.selectedItemPosition) { 0 },
-    )
+    private fun readChoices(): Choices {
+        val saved = Prefs.load(this)
+        return saved.copy(
+            target = targets.getOrElse(target.selectedItemPosition) { saved.target },
+            script = Script.entries[script.selectedItemPosition.coerceIn(0, Script.entries.size - 1)],
+            subtitles = subtitles.isChecked,
+            listen = Listen.entries[listen.selectedItemPosition.coerceIn(0, Listen.entries.size - 1)],
+            spoken = spoken.selectedItemPosition.let { if (it <= 0) null else spokenLangs.getOrNull(it - 1) },
+            model = models.getOrElse(model.selectedItemPosition) { "Tiny" },
+            textSize = textSize.selectedItemPosition.coerceIn(0, 2),
+            showOriginal = showOriginal.isChecked,
+        )
+    }
 
     private fun onChoicesChanged() {
         val c = readChoices()
@@ -200,30 +215,41 @@ class MainActivity : Activity() {
         current = c
         Prefs.save(this, c)
         updateEnabled()
-        renderCaptions()
-        // Languages, translation and the model change while listening; what to listen to at the next start.
-        if (CaptionService.running && before != null && c.source == before.source &&
-            c.settingsJson() != before.settingsJson()
-        ) {
-            Engine.run { Native.reconfigure(c.settingsJson()) }
-        }
+        if (before != null && before.target != c.target) refreshModel()
+        if (before != null) CaptionService.instance?.settingsChanged(before, c)
     }
 
     private fun updateEnabled() {
-        target.isEnabled = translate.isChecked
-        translateNote.visibility = if (translate.isChecked) View.VISIBLE else View.GONE
-        // Reading the screen uses no speech model, and its originals are on screen already.
-        val source = readChoices().source
-        val screen = source == Source.SCREEN
-        modelViews.forEach { it.visibility = if (screen) View.GONE else View.VISIBLE }
-        showOriginal.visibility = if (screen) View.GONE else View.VISIBLE
-        screenNote.visibility = if (screen) View.VISIBLE else View.GONE
-        projectionNote.visibility = if (source == Source.SYSTEM || source == Source.BOTH) View.VISIBLE else View.GONE
+        val on = subtitles.isChecked
+        subtitleOptions.visibility = if (on) View.VISIBLE else View.GONE
+        listenNote.visibility = if (listen.selectedItemPosition == Listen.SYSTEM.ordinal) View.VISIBLE else View.GONE
+        // Without the engine there are no subtitles; translating the screen still works.
+        val error = engineError
+        engineNote.visibility = if (error != null) View.VISIBLE else View.GONE
+        if (error != null) {
+            engineNote.text = getString(R.string.engine_failed, error)
+            subtitles.isEnabled = false
+        }
+    }
+
+    private fun updateState() {
+        val on = CaptionService.running
+        stateText.setText(if (on) R.string.state_on else R.string.state_off)
+        stateNote.setText(if (on) R.string.state_on_note else R.string.state_off_note)
+        stateDot.setBackgroundResource(if (on) R.drawable.dot_on else R.drawable.dot_off)
+        toggle.setText(if (on) R.string.stop else R.string.start)
+        toggle.setBackgroundResource(if (on) R.drawable.bg_button_secondary else R.drawable.bg_button_primary)
+        toggle.setTextColor(getColor(if (on) R.color.danger else R.color.on_accent))
     }
 
     private fun onToggle() {
         if (CaptionService.running) {
             startService(Intent(this, CaptionService::class.java).setAction(CaptionService.ACTION_STOP))
+            return
+        }
+        // The bubble lives over other apps: without this permission there is nothing to tap.
+        if (!Settings.canDrawOverlays(this)) {
+            askOverlay()
             return
         }
         val c = readChoices()
@@ -232,27 +258,29 @@ class MainActivity : Activity() {
             requestPermissions(missing.toTypedArray(), REQ_PERMISSIONS)
             return
         }
-        if (c.overlay && !overlayAsked && !Settings.canDrawOverlays(this)) {
-            askOverlay()
-            return
-        }
-        if (c.source.shares) {
-            startActivityForResult(Launch.consent(this), REQ_PROJECTION)
-            return
-        }
-        launch(c, 0, null)
+        status(getString(R.string.asking_sharing))
+        startActivityForResult(Launch.consent(this), REQ_PROJECTION)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != REQ_PERMISSIONS) return
-        notificationsAsked = true
-        if (!readChoices().source.listens ||
-            checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        ) {
-            onToggle()
-        } else {
-            status(getString(R.string.need_microphone), error = true)
+        val micGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        when (requestCode) {
+            REQ_PERMISSIONS -> {
+                notificationsAsked = true
+                if (subtitles.isChecked && !micGranted) {
+                    // Subtitles wait for the microphone; translating the screen does not.
+                    subtitles.isChecked = false
+                    status(getString(R.string.need_microphone), error = true)
+                }
+                onToggle()
+            }
+            REQ_MICROPHONE -> if (micGranted) {
+                onChoicesChanged()
+            } else {
+                subtitles.isChecked = false
+                status(getString(R.string.need_microphone), error = true)
+            }
         }
     }
 
@@ -260,38 +288,69 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != REQ_PROJECTION) return
         if (resultCode == RESULT_OK && data != null) {
-            launch(readChoices(), resultCode, data)
+            status("")
+            Launch.start(this, resultCode, data)
         } else {
             status(getString(R.string.projection_denied), error = true)
         }
     }
 
     private fun askOverlay() {
+        if (overlayAsked && startPending) return
         AlertDialog.Builder(this)
             .setTitle(R.string.overlay_title)
             .setMessage(R.string.overlay_message)
             .setPositiveButton(R.string.overlay_allow) { _, _ ->
                 overlayAsked = true
-                // Back from there, Start goes on with the overlay.
+                startPending = true
                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             }
-            .setNegativeButton(R.string.overlay_skip) { _, _ ->
-                overlayAsked = true
-                onToggle()
-            }
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
-    private fun launch(c: Choices, projectionCode: Int, projectionData: Intent?) {
-        captions.apply(JSONObject().put("t", "clear"))
-        renderCaptions()
-        hearing = null
-        translating = null
-        showSpeed()
-        Launch.start(this, c, projectionCode, projectionData)
+    /** Whether the target language's model is on the phone, and a button to download it now. */
+    private fun refreshModel() {
+        val lang = readChoices().target
+        if (downloading == lang) return
+        thread(name = "hm-model-check") {
+            val ready = Translations.isDownloaded(lang)
+            handler.post {
+                if (isDestroyed || readChoices().target != lang || downloading == lang) return@post
+                modelStatus.text = getString(if (ready) R.string.model_ready else R.string.model_missing, Languages.name(lang))
+                download.visibility = if (ready) View.GONE else View.VISIBLE
+            }
+        }
     }
 
-    /** Android 13: asks to put Hammurabi's tile in Quick Settings, to turn captions on from any app. */
+    private fun downloadTarget() {
+        val lang = readChoices().target
+        downloading = lang
+        download.isEnabled = false
+        modelStatus.text = getString(R.string.model_downloading, Languages.name(lang))
+        thread(name = "hm-model-download") {
+            val error = try {
+                Translations.download(lang)
+                if (lang != "en") Translations.download("en")
+                null
+            } catch (e: Exception) {
+                AppLog.w("main: $lang model not downloaded", e)
+                e.message ?: e.toString()
+            }
+            handler.post {
+                downloading = null
+                download.isEnabled = true
+                if (isDestroyed) return@post
+                if (error != null) {
+                    modelStatus.text = getString(R.string.model_failed, Languages.name(lang))
+                } else {
+                    refreshModel()
+                }
+            }
+        }
+    }
+
+    /** Android 13: asks to put Hammurabi's tile in Quick Settings, to turn it on from any app. */
     private fun askToAddTile() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         getSystemService(StatusBarManager::class.java).requestAddTileService(
@@ -303,91 +362,51 @@ class MainActivity : Activity() {
             when (result) {
                 StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED,
                 StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED,
-                -> status(getString(R.string.tile_added), ttlMs = 5_000L)
+                -> status(getString(R.string.tile_added), ttlMs = 6_000L)
                 StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED -> {}
-                else -> status(getString(R.string.tile_manual), ttlMs = 8_000L)
+                else -> status(getString(R.string.tile_manual), ttlMs = 10_000L)
             }
         }
     }
 
-    private fun onEvent(event: JSONObject) {
-        when (event.optString("t")) {
-            "final", "live", "clear" -> {
-                captions.apply(event)
-                renderCaptions()
-            }
-            else -> showMeta(event)
-        }
-    }
-
-    private fun showMeta(e: JSONObject) {
+    private fun onEvent(e: JSONObject) {
         when (e.optString("t")) {
-            "state" -> {
-                updateToggle()
-                if (e.optString("state") == "idle") {
-                    // An error that ended captions stays readable.
-                    if (statusView.currentTextColor != ERROR) status("")
-                    captions.apply(JSONObject().put("t", "clear"))
-                    renderCaptions()
-                    return
+            "service" -> {
+                updateState()
+                if (!e.optBoolean("on")) stats.text = ""
+            }
+            "model" -> if (e.optString("lang") == readChoices().target) {
+                when (e.optString("state")) {
+                    "downloading" -> {
+                        modelStatus.text = getString(R.string.model_downloading, Languages.name(e.optString("lang")))
+                        download.visibility = View.GONE
+                    }
+                    else -> refreshModel()
                 }
             }
-            "stats" -> {
-                hearing = getString(R.string.stats, e.optInt("asr_ms"), e.optString("device"))
-                showSpeed()
-                return
-            }
-            "translated" -> {
-                translating = getString(R.string.translated_in, e.optLong("ms"))
-                showSpeed()
-                return
-            }
+            "stats" -> stats.text = getString(R.string.stats, e.optInt("asr_ms"), e.optString("device"))
+            "status" -> if (e.optString("level") == "error") status(e.optString("text"), error = true)
+            "progress" -> StatusText.of(this, e)?.let { status(it.text, ttlMs = it.ttlMs) }
         }
-        // While captions run, the line says what they are made of; before, what is chosen.
-        val running = current?.source
-        StatusText.of(this, e, running)?.let {
-            // Here "Reading the screen" stays while it does.
-            status(it.text, it.error, if (e.optString("state") == "running") 0L else it.ttlMs)
-        }
-    }
-
-    private fun showSpeed() {
-        statsView.text = listOfNotNull(hearing, translating).joinToString(" · ")
     }
 
     private fun status(text: String, error: Boolean = false, ttlMs: Long = 0L) {
         statusView.text = text
-        statusView.setTextColor(if (error) ERROR else defaultStatusColor)
+        statusView.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
+        statusView.setTextColor(getColor(if (error) R.color.danger else R.color.text_dim))
         clearStatus?.let { handler.removeCallbacks(it) }
         clearStatus = null
         if (ttlMs > 0) {
-            val r = Runnable { statusView.text = "" }
+            val r = Runnable { status("") }
             clearStatus = r
             handler.postDelayed(r, ttlMs)
         }
     }
 
-    private fun updateToggle() {
-        toggle.setText(if (CaptionService.running) R.string.stop else R.string.start)
-    }
-
-    private fun renderCaptions() {
-        // What was read off the screen is shown too: here it tells what the reader sees.
-        val text = captions.text(sp(24f), sp(17f), showOriginal.isChecked || current?.source == Source.SCREEN)
-        captionsView.text = text.ifEmpty { getString(R.string.captions_hint) }
-    }
-
     private fun adapter(items: List<String>) =
-        ArrayAdapter(this, android.R.layout.simple_spinner_item, items).apply {
-            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        ArrayAdapter(this, R.layout.spinner_item, items).apply {
+            setDropDownViewResource(R.layout.spinner_dropdown_item)
         }
-
-    /** In the phone's language: "İngilizce", "Çince (Geleneksel)". */
-    private fun languageName(code: String): String {
-        val locale = Locale.getDefault()
-        return Locale.forLanguageTag(code).getDisplayName(locale)
-            .replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
-    }
 
     private fun modelLabel(i: Int): String {
         val m = modelInfo.optJSONObject(i) ?: return models[i]
@@ -404,13 +423,17 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun sp(v: Float) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, v, resources.displayMetrics).toInt()
+    private fun versionName(): String = try {
+        packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
+    } catch (e: PackageManager.NameNotFoundException) {
+        "?"
+    }
 
     private fun JSONArray.strings() = (0 until length()).map { getString(it) }
 
     private companion object {
         const val REQ_PERMISSIONS = 1
         const val REQ_PROJECTION = 2
-        val ERROR = Color.parseColor("#e5484d")
+        const val REQ_MICROPHONE = 3
     }
 }

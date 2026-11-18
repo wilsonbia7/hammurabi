@@ -4,13 +4,13 @@ import android.content.Context
 import org.json.JSONObject
 
 /**
- * The engine's events that say how things go, as a line for people: what is downloading or loading, that
- * captions run, a warning or an error. The main screen and the captions over other apps both show them.
+ * The engine's events that say how automatic subtitles go, as a line for people: what is downloading or
+ * loading, that listening started, a warning or an error. The main screen and the subtitles show them.
  */
 object StatusText {
     class Line(val text: String, val error: Boolean, val ttlMs: Long)
 
-    /** How long "Reading the screen" or "Listening" stays once captions run. */
+    /** How long "Listening" stays once subtitles run. */
     private const val RUNNING_MS = 3_000L
 
     /**
@@ -20,15 +20,11 @@ object StatusText {
     private const val DOWNLOAD_MS = 15_000L
     private const val LOADING_MS = 60_000L
 
-    /** The line for [e], or null when it is not about how things go. [source]: what captions are made of. */
-    fun of(context: Context, e: JSONObject, source: Source?): Line? = when (e.optString("t")) {
+    /** The line for [e], or null when it is not about how things go. */
+    fun of(context: Context, e: JSONObject): Line? = when (e.optString("t")) {
         "state" -> when (e.optString("state")) {
             "loading" -> Line(context.getString(R.string.state_loading), false, 0L)
-            "running" -> Line(
-                context.getString(if (source == Source.SCREEN) R.string.state_reading else R.string.state_running),
-                false,
-                RUNNING_MS,
-            )
+            "running" -> Line(context.getString(R.string.state_running), false, RUNNING_MS)
             else -> null
         }
         "status" -> e.optString("text").takeIf { it.isNotBlank() }?.let {

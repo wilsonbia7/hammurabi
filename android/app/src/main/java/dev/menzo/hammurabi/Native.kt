@@ -1,10 +1,9 @@
 package dev.menzo.hammurabi
 
 import android.content.Context
-import java.nio.ByteBuffer
 import java.util.concurrent.Executors
 
-/** The engine in Rust (android/rust, libhammurabi_android.so). */
+/** The engine in Rust (android/rust, libhammurabi_android.so): listening, for automatic subtitles. */
 object Native {
     init {
         // ONNX Runtime first: the engine opens it by name for its voice detector.
@@ -15,7 +14,7 @@ object Native {
     /** Once per process, before the rest; later calls change nothing. Null, or why the engine cannot run. */
     @JvmStatic external fun setup(filesDir: String, threads: Int): String?
 
-    /** JSON: the languages, and the speech models with their sizes and whether they are downloaded. */
+    /** JSON: the languages heard, and the speech models with their sizes and whether they are downloaded. */
     @JvmStatic external fun info(): String
 
     /** Starts an engine with these settings (the desktop app's settings as JSON). False when they do not parse. */
@@ -25,21 +24,6 @@ object Native {
 
     /** 16-bit mono audio as recorded; [system] = other apps' sound rather than the microphone. */
     @JvmStatic external fun feed(samples: ShortArray, count: Int, sampleRate: Int, system: Boolean): Boolean
-
-    /**
-     * A picture of the screen as an ImageReader gives it (RGBA rows), to Translate the screen. The mask (in the
-     * picture's pixels; all 0 for none) is where our own captions are, which are not read.
-     */
-    @JvmStatic external fun screenFrame(
-        frame: ByteBuffer,
-        width: Int,
-        height: Int,
-        rowStride: Int,
-        maskLeft: Int,
-        maskTop: Int,
-        maskRight: Int,
-        maskBottom: Int,
-    ): Boolean
 
     /** The next event as JSON, or null when none came within [timeoutMs]. */
     @JvmStatic external fun poll(timeoutMs: Int): String?

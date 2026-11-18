@@ -1,66 +1,138 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="tagline">Ekrandaki yazıları ve konuşmaları, bulunduğun uygulamadan çıkmadan çevir.</string>
+
+    <!-- Açma ve kapatma. -->
     <string name="start">Başlat</string>
     <string name="stop">Durdur</string>
-    <string name="captions_hint">Altyazılar burada görünür.</string>
+    <string name="state_on">Açık</string>
+    <string name="state_off">Kapalı</string>
+    <string name="state_on_note">Herhangi bir uygulamada ekranın kenarındaki balona dokun; ekran çevrilir. Menü için balona basılı tut.</string>
+    <string name="state_off_note">Başlatınca ekranının kenarında, tüm uygulamaların üzerinde küçük bir balon belirir.</string>
+    <string name="asking_sharing">Android ekran paylaşımı için izin istiyor. Tüm ekranı paylaşarak onayla.</string>
+    <string name="projection_denied">Ekran paylaşımı olmadan Hammurabi neyi çevireceğini göremez.</string>
 
-    <string name="label_source">Ne çevrilsin?</string>
-    <string name="source_screen">Ekrandaki yazılar (gönderi, yorum, oyun)</string>
-    <string name="source_system">Telefonun sesi (video, oyun)</string>
-    <string name="source_mic">Mikrofon (yanınızda konuşanlar)</string>
-    <string name="source_both">Mikrofon ve telefonun sesi</string>
-    <string name="screen_note">Hangi uygulamada olursan ol, ekrandaki yabancı yazılar okunur; çevirisi film altyazısı gibi altta çıkar. Zaten çevrilen dilde olan yazılar ve uygulamaların düğmeleri atlanır. Android sorunca tüm ekranı paylaş. Latin ve Çin harfleri okunur.</string>
-    <string name="add_tile">Bildirim paneline Hammurabi düğmesi ekle</string>
-    <string name="tile_added">Hammurabi bildirim panelinde: herhangi bir uygulamada ekranın üstünden aşağı çekip aç.</string>
-    <string name="tile_manual">Elle ekle: bildirim panelini aç, kalem simgesine dokun, Hammurabi\'yi sürükle.</string>
+    <!-- Nasıl kullanılır. -->
+    <string name="howto_title">Nasıl kullanılır?</string>
+    <string name="howto_1">Başlat\'a dokun ve Android\'in istediği izinleri ver. Ekran paylaşımında tüm ekranı seç.</string>
+    <string name="howto_2">Instagram, Facebook, bir oyun ya da herhangi bir uygulamayı aç. Balona dokun: ekrandaki yazılar oldukları yerde çevrilir.</string>
+    <string name="howto_3">Bir çeviriye dokunursan aslını görür, kopyalayabilirsin. Başka bir yere dokununca çeviri kapanır.</string>
+    <string name="howto_4">Menü için balona basılı tut: altyazı, dil ve kapatma burada. Balonu sürükleyerek yerini değiştirebilirsin.</string>
+
+    <!-- Çeviri. -->
+    <string name="translation_title">Çeviri</string>
+    <string name="label_target">Hangi dile çevrilsin?</string>
+    <string name="model_ready">%s çeviri modeli telefonunda; çeviri internetsiz de çalışır.</string>
+    <string name="model_missing">%s çeviri modeli ilk çeviride indirilecek (yaklaşık 30 MB).</string>
+    <string name="model_downloading">%s çeviri modeli indiriliyor…</string>
+    <string name="model_failed">%s çeviri modeli indirilemedi. İnternet bağlantını kontrol et.</string>
+    <string name="download_now">Şimdi indir</string>
+    <string name="label_script">Ekrandaki yazıların alfabesi</string>
+    <string name="script_latin">Latin (İngilizce, Almanca, İspanyolca…)</string>
+    <string name="script_chinese">Çince ve Latin</string>
+    <string name="script_japanese">Japonca ve Latin</string>
+    <string name="script_korean">Korece ve Latin</string>
+    <string name="script_note">Kiril (Rusça) ve Arap harfleri henüz okunamıyor.</string>
+
+    <!-- Otomatik altyazı. -->
+    <string name="subtitles_title">Otomatik altyazı</string>
+    <string name="subtitles_note">Videolardaki ve oyunlardaki konuşmalar, ekranın altında altyazı olarak çevrilir.</string>
+    <string name="label_listen">Ne dinlensin?</string>
+    <string name="listen_system">Telefonun sesi (video, oyun)</string>
+    <string name="listen_mic">Mikrofon (yanındaki konuşmalar)</string>
+    <string name="listen_note">Bazı uygulamalar seslerinin kaydedilmesine izin vermez; onların konuşmaları altyazıya çevrilemez.</string>
+    <string name="label_spoken">Konuşulan dil</string>
+    <string name="spoken_auto">Otomatik algıla</string>
+    <string name="label_model">Konuşma modeli</string>
+    <string name="model_note">Tiny çoğu telefonda akıcı çalışır. Base daha iyi duyar ama hızlı bir telefon ister. Model bir kez indirilir.</string>
+    <string name="downloaded">indirildi</string>
+    <string name="label_size">Altyazı boyutu</string>
+    <string name="size_small">Küçük</string>
+    <string name="size_medium">Orta</string>
+    <string name="size_large">Büyük</string>
+    <string name="show_original">Çevirinin altında konuşmanın aslını da göster</string>
+    <string name="stats">Duyma süresi %1$d ms · %2$s</string>
+    <string name="engine_failed">Altyazı bu telefonda çalışamıyor: %s</string>
+
+    <!-- Diğer. -->
+    <string name="more_title">Diğer</string>
+    <string name="add_tile">Hızlı ayarlara kısayol ekle</string>
+    <string name="tile_added">Hammurabi hızlı ayarlarda: herhangi bir uygulamada ekranın üstünden aşağı kaydır ve dokun.</string>
+    <string name="tile_manual">Kendin ekle: hızlı ayarları aç, kalem simgesine dokun ve Hammurabi\'yi sürükleyip bırak.</string>
     <string name="tile_on">Açık</string>
     <string name="tile_off">Kapalı</string>
-    <string name="projection_note">Telefonun sesi için Android ekranı paylaşma izni sorar. Hammurabi yalnızca sesi dinler, ekranın görüntüsünü almaz.</string>
+    <string name="copy_log">Hata kaydını kopyala</string>
+    <string name="copy_log_note">Bir sorun olursa kaydı kopyalayıp geliştiriciye gönder.</string>
 
-    <string name="label_spoken">Duyulan ya da okunan dil</string>
-    <string name="spoken_auto">Otomatik algıla</string>
-    <string name="translate">Çevir</string>
-    <string name="label_target">Şu dile</string>
-    <string name="translate_note">İlk seferde çeviri modeli indirilir (%s, Wi-Fi önerilir).</string>
+    <!-- Hakkında. -->
+    <string name="about_title">Hakkında</string>
+    <string name="privacy">Yazılar ve konuşmalar bu telefonda okunur ve çevrilir; ne ekran görüntüsü ne de ses telefondan çıkar. Modeller yalnızca ilk gerektiklerinde bir kez indirilir.</string>
+    <string name="about_google">Çeviriler Google Translate (ML Kit) ile yapılır.</string>
+    <string name="version">Sürüm %s</string>
 
-    <string name="label_model">Konuşma modeli</string>
-    <string name="model_note">Tiny çoğu telefonda yetişir. Base daha iyi duyar ama hızlı bir telefon ister.</string>
-    <string name="downloaded">indirildi</string>
+    <!-- İzinler. -->
+    <string name="overlay_title">Diğer uygulamaların üzerinde göster</string>
+    <string name="overlay_message">Balonun her uygulamanın üzerinde durabilmesi için bu izin gerekiyor. Açılan listede Hammurabi\'yi bul, izni aç ve geri dön.</string>
+    <string name="overlay_allow">Ayarları aç</string>
+    <string name="cancel">Vazgeç</string>
+    <string name="need_microphone">Altyazı için mikrofon izni gerekiyor (telefonun sesi için de).</string>
+    <string name="need_sharing_for_sound">Telefonun sesini altyazıya çevirmek için ekran paylaşımı gerekiyor.</string>
 
-    <string name="overlay">Altyazıyı diğer uygulamaların üstünde göster</string>
-    <string name="show_original">Aslını da göster</string>
-    <string name="label_threads">İşlemci çekirdeği</string>
-    <string name="threads_auto">Otomatik</string>
-    <string name="threads_note">Uygulama yeniden açılınca geçerli olur.</string>
-    <string name="privacy">Duyulan ya da okunan her şey bu telefonda tanınır ve çevrilir; ne ses ne de ekran görüntüsü telefondan çıkar. Modeller bir kez Hugging Face\'ten indirilir.</string>
+    <!-- Balon ve menüsü. -->
+    <string name="bubble_hint">Dokun: ekranı çevir\nBasılı tut: menü</string>
+    <string name="bubble_description">Ekranı çevir</string>
+    <string name="menu_translate">Ekranı çevir</string>
+    <string name="menu_subtitles">Otomatik altyazı</string>
+    <string name="menu_language">Dil</string>
+    <string name="menu_open">Hammurabi\'yi aç</string>
+    <string name="menu_quit">Hammurabi\'yi kapat</string>
+    <string name="on">Açık</string>
+    <string name="off">Kapalı</string>
+    <string name="choose_target">Hangi dile çevrilsin?</string>
 
-    <string name="overlay_title">Diğer uygulamaların üstünde altyazı</string>
-    <string name="overlay_message">Altyazıyı bir videonun üstünde göstermek için Hammurabi\'ye diğer uygulamaların üzerinde gösterme izni verin.</string>
-    <string name="overlay_allow">İzin ver</string>
-    <string name="overlay_skip">Şimdi değil</string>
+    <!-- Çevrilmiş ekran. -->
+    <string name="layer_reading">Ekrandaki yazılar okunuyor…</string>
+    <string name="layer_translating">Çevriliyor…</string>
+    <string name="layer_progress">Çevriliyor… %1$d/%2$d</string>
+    <string name="layer_downloading">%s çeviri modeli indiriliyor…</string>
+    <string name="layer_downloading_note">Yalnızca ilk seferde (yaklaşık 30 MB). Sonra çeviri internetsiz çalışır.</string>
+    <plurals name="layer_done">
+        <item quantity="one">%d yazı çevrildi</item>
+        <item quantity="other">%d yazı çevrildi</item>
+    </plurals>
+    <string name="layer_hint">Aslını görmek için bir çeviriye dokun. Kapatmak için boş bir yere dokun.</string>
+    <string name="layer_nothing">Ekranda çevrilecek yazı bulunamadı.</string>
+    <string name="layer_all_same">Ekrandaki yazılar zaten %s.</string>
+    <string name="layer_unsupported">Bu dil çevrilemiyor: %s</string>
+    <string name="layer_original">Aslı</string>
+    <string name="layer_translation">Çeviri</string>
+    <string name="copy">Kopyala</string>
+    <string name="copied">Kopyalandı</string>
+    <string name="close">Kapat</string>
+    <string name="error_capture">Ekran görüntüsü alınamadı. Tekrar dene.</string>
+    <string name="error_read">Ekrandaki yazılar okunamadı.</string>
+    <string name="error_model">%s çeviri modeli indirilemedi. İnternet bağlantını kontrol et.</string>
+    <string name="error_translate">Çeviri yapılamadı: %s</string>
 
-    <string name="need_microphone">Dinleyebilmek için mikrofon izni gerekiyor.</string>
-    <string name="projection_denied">Ekran paylaşma izni olmadan ne ekran ne de telefonun sesi çevrilebilir.</string>
+    <!-- Altyazı çalışırken. -->
     <string name="state_loading">Hazırlanıyor…</string>
-    <string name="state_running">Dinliyor</string>
-    <string name="state_reading">Ekran okunuyor</string>
+    <string name="state_running">Dinleniyor</string>
     <string name="downloading">%1$s indiriliyor: %%%2$d</string>
     <string name="downloading_size">%1$s indiriliyor: %2$d MB</string>
     <string name="loading_model">%s yükleniyor…</string>
-    <string name="stats">Duyma süresi %1$d ms · %2$s</string>
-    <string name="translated_in">Çeviri süresi %d ms</string>
+    <string name="silent_app">Çalan uygulama sesinin kaydedilmesine izin vermiyor. Bunun yerine ekrandaki yazılarını çevirmek için balona dokun.</string>
 
-    <string name="channel_name">Altyazılar</string>
-    <string name="notification_title">Hammurabi çeviriyor</string>
-    <string name="notification_text">Açmak için dokunun ya da buradan durdurun.</string>
+    <!-- Bildirim ve hatalar. -->
+    <string name="channel_name">Hammurabi</string>
+    <string name="notification_title">Hammurabi açık</string>
+    <string name="notification_text">Çevirmek için ekrandaki balona dokun. Uygulamayı açmak için buraya dokun.</string>
     <string name="stopped">Hammurabi durdu</string>
     <string name="stopped_with">Hammurabi durdu: %s</string>
-    <string name="silent_app">Çalan uygulama sesinin alınmasına izin vermiyor. Bu uygulama için \"Ekrandaki yazılar\"ı seç (altyazı, yazılar).</string>
-
-    <string name="error_projection">Telefonun sesi dinlenemedi.</string>
+    <string name="subtitles_stopped_with">Altyazı durdu: %s</string>
+    <string name="error_foreground">Android, Hammurabi\'nin başlamasına izin vermedi. Hammurabi\'yi açıp yeniden Başlat\'a dokun.</string>
+    <string name="error_projection">Ekran paylaşımı başlatılamadı.</string>
+    <string name="error_microphone_service">Mikrofon kullanılamadı. Hammurabi\'yi durdurup yeniden başlat.</string>
     <string name="error_settings">Ayarlar okunamadı.</string>
     <string name="error_recorder">Kayıt başlamadı: %s</string>
-    <string name="error_engine">Motor beklenmedik şekilde durdu.</string>
-    <string name="error_ocr_models">Bu sürümde ekran için yazı tanıyıcı yok.</string>
-    <string name="setup_failed">Motor bu telefonda çalışamıyor: %s</string>
+    <string name="error_engine">Altyazı beklenmedik şekilde durdu.</string>
 </resources>

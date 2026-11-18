@@ -1,67 +1,141 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name" translatable="false">Hammurabi</string>
+    <string name="tagline">Translate the text and speech on your screen without leaving the app you are in.</string>
+
+    <!-- On and off. -->
     <string name="start">Start</string>
     <string name="stop">Stop</string>
-    <string name="captions_hint">Captions appear here.</string>
+    <string name="state_on">On</string>
+    <string name="state_off">Off</string>
+    <string name="state_on_note">In any app, tap the bubble at the edge of the screen to translate it. Hold the bubble for the menu.</string>
+    <string name="state_off_note">When you start, a small bubble appears at the edge of your screen, over every app.</string>
+    <string name="asking_sharing">Android is asking to share your screen. Allow it, sharing the entire screen.</string>
+    <string name="projection_denied">Without screen sharing Hammurabi cannot see what to translate.</string>
 
-    <string name="label_source">Translate</string>
-    <string name="source_screen">Text on screen (posts, comments, games)</string>
-    <string name="source_system">The phone\'s sound (videos, games)</string>
-    <string name="source_mic">Microphone (people near you)</string>
-    <string name="source_both">Microphone and the phone\'s sound</string>
-    <string name="screen_note">Foreign text on the screen is read in any app; its translation shows at the bottom, like a film\'s subtitles. Text already in the language you translate into, and apps\' buttons, are skipped. When Android asks, share the entire screen. Latin and Chinese letters are read.</string>
-    <string name="projection_note">For the phone\'s sound Android asks to share the screen. Hammurabi only listens; it takes no pictures of the screen.</string>
-    <string name="add_tile">Add a Hammurabi switch to Quick Settings</string>
-    <string name="tile_added">Hammurabi is in Quick Settings: pull down from the top of the screen to turn it on in any app.</string>
-    <string name="tile_manual">Add it by hand: open Quick Settings, tap the pencil, and drag Hammurabi in.</string>
+    <!-- How to use it. -->
+    <string name="howto_title">How to use it</string>
+    <string name="howto_1">Tap Start and allow what Android asks for. Choose to share the entire screen.</string>
+    <string name="howto_2">Open Instagram, Facebook, a game or any app. Tap the bubble: the text on the screen is translated in place.</string>
+    <string name="howto_3">Tap a translation to see the original and copy it. Tap anywhere else to close.</string>
+    <string name="howto_4">Hold the bubble for the menu: subtitles, language, closing. Drag it to move it.</string>
+
+    <!-- Translation. -->
+    <string name="translation_title">Translation</string>
+    <string name="label_target">Translate into</string>
+    <string name="model_ready">The %s translation model is on your phone. Translation works offline.</string>
+    <string name="model_missing">The %s translation model downloads the first time you translate (about 30 MB).</string>
+    <string name="model_downloading">Downloading the %s translation model…</string>
+    <string name="model_failed">The %s translation model could not be downloaded. Check your internet connection.</string>
+    <string name="download_now">Download now</string>
+    <string name="label_script">Alphabet of the text on screen</string>
+    <string name="script_latin">Latin (English, German, Spanish…)</string>
+    <string name="script_chinese">Chinese and Latin</string>
+    <string name="script_japanese">Japanese and Latin</string>
+    <string name="script_korean">Korean and Latin</string>
+    <string name="script_note">Cyrillic (Russian) and Arabic letters cannot be read yet.</string>
+
+    <!-- Automatic subtitles. -->
+    <string name="subtitles_title">Automatic subtitles</string>
+    <string name="subtitles_note">Speech in videos and games, translated at the bottom of the screen as subtitles.</string>
+    <string name="label_listen">Listen to</string>
+    <string name="listen_system">Phone sound (videos, games)</string>
+    <string name="listen_mic">Microphone (people near you)</string>
+    <string name="listen_note">Some apps do not let their sound be recorded; their speech cannot be subtitled.</string>
+    <string name="label_spoken">Spoken language</string>
+    <string name="spoken_auto">Detect automatically</string>
+    <string name="label_model">Speech model</string>
+    <string name="model_note">Tiny keeps up on most phones. Base hears better but needs a fast phone. The model downloads once.</string>
+    <string name="downloaded">downloaded</string>
+    <string name="label_size">Subtitle size</string>
+    <string name="size_small">Small</string>
+    <string name="size_medium">Medium</string>
+    <string name="size_large">Large</string>
+    <string name="show_original">Show what was said under the translation</string>
+    <string name="stats">Hearing time %1$d ms · %2$s</string>
+    <string name="engine_failed">Subtitles cannot run on this phone: %s</string>
+
+    <!-- More. -->
+    <string name="more_title">More</string>
+    <string name="add_tile">Add a shortcut to Quick Settings</string>
+    <string name="tile_added">Hammurabi is in Quick Settings: swipe down from the top of the screen in any app and tap it.</string>
+    <string name="tile_manual">Add it yourself: open Quick Settings, tap the pencil and drag Hammurabi in.</string>
     <string name="tile_on">On</string>
     <string name="tile_off">Off</string>
+    <string name="copy_log">Copy the error log</string>
+    <string name="copy_log_note">If something goes wrong, copy the log and send it to the developer.</string>
 
-    <string name="label_spoken">Language heard or read</string>
-    <string name="spoken_auto">Detect</string>
-    <string name="translate">Translate</string>
-    <string name="label_target">Into</string>
-    <string name="translate_note">The first time, the translation model downloads (%s; Wi-Fi recommended).</string>
+    <!-- About. -->
+    <string name="about_title">About</string>
+    <string name="privacy">Text and speech are read and translated on this phone. No screenshot or sound leaves it. The models download once, the first time they are needed.</string>
+    <string name="about_google">Translations are powered by Google Translate (ML Kit).</string>
+    <string name="disclaimer" translatable="false">THIS SERVICE MAY CONTAIN TRANSLATIONS POWERED BY GOOGLE. GOOGLE DISCLAIMS ALL WARRANTIES RELATED TO THE TRANSLATIONS, EXPRESS OR IMPLIED, INCLUDING ANY WARRANTIES OF ACCURACY, RELIABILITY, AND ANY IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.</string>
+    <string name="version">Version %s</string>
 
-    <string name="label_model">Speech model</string>
-    <string name="model_note">Tiny keeps up on most phones. Base hears better but needs a fast phone.</string>
-    <string name="downloaded">downloaded</string>
+    <!-- Permissions. -->
+    <string name="overlay_title">Show over other apps</string>
+    <string name="overlay_message">The bubble needs this permission to stay over every app. In the list that opens, find Hammurabi and turn it on, then come back.</string>
+    <string name="overlay_allow">Open settings</string>
+    <string name="cancel">Cancel</string>
+    <string name="need_microphone">Subtitles need the microphone permission (the phone\'s sound needs it too).</string>
+    <string name="need_sharing_for_sound">Subtitles of the phone\'s sound need screen sharing.</string>
 
-    <string name="overlay">Show captions over other apps</string>
-    <string name="show_original">Also show the original</string>
-    <string name="label_threads">Processor cores</string>
-    <string name="threads_auto">Auto</string>
-    <string name="threads_note">Takes effect when the app starts again.</string>
-    <string name="privacy">What is heard or read is recognized and translated on this phone; neither sound nor pictures of the screen leave it. The models download once, from Hugging Face.</string>
+    <!-- The bubble and its menu. -->
+    <string name="bubble_hint">Tap: translate the screen\nHold: menu</string>
+    <string name="bubble_description">Translate the screen</string>
+    <string name="menu_translate">Translate the screen</string>
+    <string name="menu_subtitles">Automatic subtitles</string>
+    <string name="menu_language">Language</string>
+    <string name="menu_open">Open Hammurabi</string>
+    <string name="menu_quit">Close Hammurabi</string>
+    <string name="on">On</string>
+    <string name="off">Off</string>
+    <string name="choose_target">Translate into</string>
 
-    <string name="overlay_title">Captions over other apps</string>
-    <string name="overlay_message">To show captions over a video, allow Hammurabi to display over other apps.</string>
-    <string name="overlay_allow">Allow</string>
-    <string name="overlay_skip">Not now</string>
+    <!-- The translated screen. -->
+    <string name="attribution" translatable="false">powered by Google Translate</string>
+    <string name="layer_reading">Reading the screen…</string>
+    <string name="layer_translating">Translating…</string>
+    <string name="layer_progress">Translating… %1$d/%2$d</string>
+    <string name="layer_downloading">Downloading the %s translation model…</string>
+    <string name="layer_downloading_note">Only the first time (about 30 MB). Translation then works offline.</string>
+    <plurals name="layer_done">
+        <item quantity="one">%d text translated</item>
+        <item quantity="other">%d texts translated</item>
+    </plurals>
+    <string name="layer_hint">Tap a translation for its original. Tap elsewhere to close.</string>
+    <string name="layer_nothing">No text to translate on the screen.</string>
+    <string name="layer_all_same">The text on the screen is already in %s.</string>
+    <string name="layer_unsupported">This language cannot be translated: %s</string>
+    <string name="layer_original">Original</string>
+    <string name="layer_translation">Translation</string>
+    <string name="copy">Copy</string>
+    <string name="copied">Copied</string>
+    <string name="close">Close</string>
+    <string name="error_capture">The screen could not be captured. Try again.</string>
+    <string name="error_read">The text on the screen could not be read.</string>
+    <string name="error_model">The %s translation model could not be downloaded. Check your internet connection.</string>
+    <string name="error_translate">Translation failed: %s</string>
 
-    <string name="need_microphone">Hammurabi needs the microphone permission to listen.</string>
-    <string name="projection_denied">Without screen sharing, neither the screen nor the phone\'s sound can be translated.</string>
+    <!-- Subtitles, as they go. -->
     <string name="state_loading">Getting ready…</string>
     <string name="state_running">Listening</string>
-    <string name="state_reading">Reading the screen</string>
     <string name="downloading">Downloading %1$s: %2$d%%</string>
     <string name="downloading_size">Downloading %1$s: %2$d MB</string>
     <string name="loading_model">Loading %s…</string>
-    <string name="stats">Hearing takes %1$d ms · %2$s</string>
-    <string name="translated_in">Translating took %d ms</string>
+    <string name="silent_app">The app playing does not let its sound be recorded. Tap the bubble to translate its on-screen text instead.</string>
 
-    <string name="channel_name">Captions</string>
-    <string name="notification_title">Hammurabi is translating</string>
-    <string name="notification_text">Tap to open, or stop here.</string>
+    <!-- The notification and errors. -->
+    <string name="channel_name">Hammurabi</string>
+    <string name="notification_title">Hammurabi is on</string>
+    <string name="notification_text">Tap the bubble on your screen to translate. Tap here to open the app.</string>
     <string name="stopped">Hammurabi stopped</string>
     <string name="stopped_with">Hammurabi stopped: %s</string>
-    <string name="silent_app">The app playing does not let its sound be captured. For it, choose \"Text on screen\" (subtitles, captions).</string>
-
-    <string name="error_projection">Could not start listening to the phone\'s sound.</string>
+    <string name="subtitles_stopped_with">Subtitles stopped: %s</string>
+    <string name="error_foreground">Android did not let Hammurabi start. Open Hammurabi and tap Start again.</string>
+    <string name="error_projection">Screen sharing could not start.</string>
+    <string name="error_microphone_service">The microphone could not be used. Stop Hammurabi and start it again.</string>
     <string name="error_settings">The settings could not be read.</string>
-    <string name="error_recorder">Recording could not start: %s</string>
-    <string name="error_engine">The engine stopped unexpectedly.</string>
-    <string name="error_ocr_models">This build has no text recognizer for the screen.</string>
-    <string name="setup_failed">The engine cannot run on this phone: %s</string>
+    <string name="error_recorder">Recording did not start: %s</string>
+    <string name="error_engine">Subtitles stopped unexpectedly.</string>
 </resources>

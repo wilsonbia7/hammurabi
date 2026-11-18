@@ -1,19 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Listening: the microphone, and other apps' sound (that also needs RECORD_AUDIO). Reading the
-         screen needs neither. -->
+    <!-- Automatic subtitles: the microphone, and other apps' sound (that also needs RECORD_AUDIO).
+         Translating the screen needs neither. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <!-- Downloading the models once. Audio never leaves the phone. -->
+    <!-- Downloading the models once. Neither the screen nor its sound leaves the phone. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- Captions over other apps. -->
+    <!-- The bubble, the translated screen and the subtitles over other apps. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
+        android:name=".App"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -30,7 +31,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Asks for screen sharing when captions are turned on from the tile. -->
+        <!-- Asks Android for screen sharing or the microphone over the app in front. -->
         <activity
             android:name=".StartActivity"
             android:excludeFromRecents="true"
@@ -43,7 +44,7 @@
             android:exported="false"
             android:foregroundServiceType="microphone|mediaProjection" />
 
-        <!-- Captions on and off from Quick Settings, over any app. -->
+        <!-- Hammurabi on and off from Quick Settings, over any app. -->
         <service
             android:name=".CaptionTile"
             android:exported="true"
