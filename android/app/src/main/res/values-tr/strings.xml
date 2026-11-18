@@ -8,9 +8,11 @@
     <string name="source_mic">Mikrofon (yanınızda konuşanlar)</string>
     <string name="source_system">Telefonun sesi (videolar, uygulamalar)</string>
     <string name="source_both">İkisi birden</string>
+    <string name="source_screen">Ekrandaki altyazı (video, oyun)</string>
+    <string name="screen_note">Ekranın alt kısmındaki altyazılar okunup çevrilir, çeviri ekranın üstünde görünür. Latin ve Çin harfleri okunur. Yalnız bir uygulamayı okutmak için Android sorduğunda o uygulamayı paylaş.</string>
     <string name="projection_note">Telefonun sesi için Android ekranı paylaşma izni sorar. Hammurabi yalnızca sesi dinler, ekranın görüntüsünü almaz.</string>
 
-    <string name="label_spoken">Konuşulan dil</string>
+    <string name="label_spoken">Duyulan ya da okunan dil</string>
     <string name="spoken_auto">Otomatik algıla</string>
     <string name="translate">Çevir</string>
     <string name="label_target">Şu dile</string>
@@ -49,5 +51,6 @@
     <string name="error_settings">Ayarlar okunamadı.</string>
     <string name="error_recorder">Kayıt başlamadı: %s</string>
     <string name="error_engine">Motor beklenmedik şekilde durdu.</string>
+    <string name="error_ocr_models">Bu sürümde ekran için yazı tanıyıcı yok.</string>
     <string name="setup_failed">Motor bu telefonda çalışamıyor: %s</string>
 </resources>

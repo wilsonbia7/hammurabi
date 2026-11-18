@@ -9,9 +9,11 @@
     <string name="source_mic">Microphone (people near you)</string>
     <string name="source_system">The phone\'s sound (videos, apps)</string>
     <string name="source_both">Both</string>
+    <string name="source_screen">Subtitles on screen (videos, games)</string>
+    <string name="screen_note">The subtitles at the bottom of the screen are read and translated; the translation shows at the top. Latin and Chinese letters are read. To read one app only, share that app when Android asks.</string>
     <string name="projection_note">For the phone\'s sound Android asks to share the screen. Hammurabi only listens; it takes no pictures of the screen.</string>
 
-    <string name="label_spoken">Spoken language</string>
+    <string name="label_spoken">Language heard or read</string>
     <string name="spoken_auto">Detect</string>
     <string name="translate">Translate</string>
     <string name="label_target">Into</string>
@@ -50,5 +52,6 @@
     <string name="error_settings">The settings could not be read.</string>
     <string name="error_recorder">Recording could not start: %s</string>
     <string name="error_engine">The engine stopped unexpectedly.</string>
+    <string name="error_ocr_models">This build has no text recognizer for the screen.</string>
     <string name="setup_failed">The engine cannot run on this phone: %s</string>
 </resources>

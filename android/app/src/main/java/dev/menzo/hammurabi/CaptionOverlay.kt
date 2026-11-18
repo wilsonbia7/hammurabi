@@ -15,10 +15,15 @@ import android.widget.TextView
 import org.json.JSONObject
 
 /**
- * Captions over every app, near the bottom of the screen, like the desktop overlay. Touches go through
- * to the app below. Needs the "display over other apps" permission.
+ * Captions over every app, near the bottom of the screen like the desktop overlay, or at the [top]
+ * (out of the band Subtitles on screen reads). Touches go through to the app below. Needs the
+ * "display over other apps" permission.
  */
-class CaptionOverlay(private val context: Context, private val showOriginal: Boolean) {
+class CaptionOverlay(
+    private val context: Context,
+    private val showOriginal: Boolean,
+    private val top: Boolean = false,
+) {
     private val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val handler = Handler(Looper.getMainLooper())
     private val captions = Captions()
@@ -66,9 +71,10 @@ class CaptionOverlay(private val context: Context, private val showOriginal: Boo
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT,
         ).apply {
-            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            // Above video players' controls and the navigation bar.
-            y = (metrics.heightPixels * 0.10f).toInt()
+            gravity = (if (top) Gravity.TOP else Gravity.BOTTOM) or Gravity.CENTER_HORIZONTAL
+            // Clear of the status bar at the top; above video players' controls and the navigation
+            // bar at the bottom.
+            y = (metrics.heightPixels * if (top) 0.06f else 0.10f).toInt()
             // Since Android 12 touches only pass through another app's window up to this opacity.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 alpha = (context.getSystemService(Context.INPUT_SERVICE) as InputManager).maximumObscuringOpacityForTouch

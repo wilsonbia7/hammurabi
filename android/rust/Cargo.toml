@@ -16,12 +16,13 @@ anyhow = "1"
 crossbeam-channel = "0.5"
 jni = "0.22"
 log = "0.4"
+# The screen's text recognizer (ocr.rs); the hammurabi crate picks how ONNX Runtime is linked.
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std"] }
 serde_json = "1"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15"
-# Same version and features as the hammurabi crate's Android dependency: loads the app's
-# libonnxruntime.so at run time.
+# As the hammurabi crate's Android dependency: the app's libonnxruntime.so, loaded at run time.
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic"] }
 
 [profile.release]

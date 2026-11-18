@@ -1,6 +1,7 @@
 package dev.menzo.hammurabi
 
 import android.content.Context
+import java.nio.ByteBuffer
 import java.util.concurrent.Executors
 
 /** The engine in Rust (android/rust, libhammurabi_android.so). */
@@ -24,6 +25,9 @@ object Native {
 
     /** 16-bit mono audio as recorded; [system] = other apps' sound rather than the microphone. */
     @JvmStatic external fun feed(samples: ShortArray, count: Int, sampleRate: Int, system: Boolean): Boolean
+
+    /** A picture of the screen as an ImageReader gives it (RGBA rows), for Subtitles on screen. */
+    @JvmStatic external fun screenFrame(frame: ByteBuffer, width: Int, height: Int, rowStride: Int): Boolean
 
     /** The next event as JSON, or null when none came within [timeoutMs]. */
     @JvmStatic external fun poll(timeoutMs: Int): String?

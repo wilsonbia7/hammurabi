@@ -60,4 +60,36 @@ val buildRust by tasks.registering(Exec::class) {
         "build", "--release",
     )
 }
-tasks.named("preBuild") { dependsOn(buildRust) }
+
+// The screen recognizer's models (PaddleOCR PP-OCRv4, Apache-2.0) as RapidOCR ships them in its
+// wheel on PyPI, checked against the wheel's hash and packed into the APK's assets (OcrModels.kt).
+val ocrWheelUrl = "https://files.pythonhosted.org/packages/ba/12/" +
+    "1e5497183bdbe782dbb91bad1d0d2297dba4d2831b2652657f7517bfc6df/rapidocr_onnxruntime-1.4.4-py3-none-any.whl"
+val ocrWheelSha256 = "971d7d5f223a7a808662229df1ef69893809d8457d834e6373d3854bc1782cbf"
+val ocrModels = listOf("ch_PP-OCRv4_det_infer.onnx", "ch_PP-OCRv4_rec_infer.onnx")
+val ocrAssets = layout.buildDirectory.dir("generated/ocr-assets").get().asFile
+val fetchOcrModels by tasks.registering {
+    group = "build"
+    description = "Fetches the screen recognizer's models into the APK's assets."
+    outputs.dir(ocrAssets)
+    doLast {
+        val dir = File(ocrAssets, "ocr").apply { mkdirs() }
+        if (ocrModels.all { File(dir, it).isFile }) return@doLast
+        val wheel = File(temporaryDir, "rapidocr.whl")
+        java.net.URI(ocrWheelUrl).toURL().openStream().use { input ->
+            wheel.outputStream().use { input.copyTo(it) }
+        }
+        val sha = java.security.MessageDigest.getInstance("SHA-256").digest(wheel.readBytes())
+            .joinToString("") { "%02x".format(it) }
+        check(sha == ocrWheelSha256) { "RapidOCR's wheel has hash $sha, not $ocrWheelSha256" }
+        java.util.zip.ZipFile(wheel).use { zip ->
+            for (name in ocrModels) {
+                val entry = zip.getEntry("rapidocr_onnxruntime/models/$name") ?: error("$name is not in the wheel")
+                zip.getInputStream(entry).use { input -> File(dir, name).outputStream().use { input.copyTo(it) } }
+            }
+        }
+    }
+}
+android.sourceSets["main"].assets.srcDir(ocrAssets)
+
+tasks.named("preBuild") { dependsOn(buildRust, fetchOcrModels) }

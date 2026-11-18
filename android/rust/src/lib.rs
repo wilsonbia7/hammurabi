@@ -1,9 +1,13 @@
 //! The Android app's way into Hammurabi (android/app, `Native.kt`): one engine at a time, fed with
-//! the audio the app records (`Engine::spawn_fed`) and read back as JSON events. Captions use the
-//! JSON of the desktop's browser source (`ui::web`), so the same drawing code can read both.
+//! the audio the app records, or with the subtitles read off the screen pictures it captures
+//! (`Engine::spawn_fed_screen`), and read back as JSON events. Captions use the JSON of the
+//! desktop's browser source (`ui::web`), so the same drawing code can read both.
+
+mod ocr;
+mod screen;
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard, Once};
+use std::sync::{Arc, Mutex, MutexGuard, Once, OnceLock};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Sender, TrySendError};
@@ -16,7 +20,7 @@ use hammurabi::types::{
 };
 use jni::EnvUnowned;
 use jni::errors::ThrowRuntimeExAndDefault;
-use jni::objects::{JClass, JShortArray, JString};
+use jni::objects::{JByteBuffer, JClass, JShortArray, JString};
 use jni::sys::{jboolean, jint};
 use serde_json::{Value, json};
 
@@ -33,9 +37,18 @@ struct Session {
 }
 
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
+/// Reading subtitles off the screen, while Subtitles on screen runs: apart from `SESSION`, since
+/// a picture takes the recognizer tens of milliseconds and audio and events must not wait.
+static SCREEN: Mutex<Option<screen::ScreenRead>> = Mutex::new(None);
+/// The app's files folder (`setup`).
+static FILES: OnceLock<PathBuf> = OnceLock::new();
 
 fn session() -> MutexGuard<'static, Option<Session>> {
     SESSION.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+fn screen_read() -> MutexGuard<'static, Option<screen::ScreenRead>> {
+    SCREEN.lock().unwrap_or_else(|p| p.into_inner())
 }
 
 /// `Native.setup(filesDir, threads)`: before `start`, once per process (later calls change
@@ -70,7 +83,8 @@ fn setup(dir: PathBuf, threads: i32) -> anyhow::Result<()> {
             previous(info);
         }));
     });
-    hammurabi::paths::set_root(dir);
+    hammurabi::paths::set_root(dir.clone());
+    let _ = FILES.set(dir);
     set_threads(threads);
     // Silero VAD runs on ONNX Runtime from the app's onnxruntime-android package. Loading it now
     // turns a missing or too old library into an error here instead of a panic in the engine.
@@ -183,22 +197,48 @@ pub extern "system" fn Java_dev_menzo_hammurabi_Native_reconfigure<'local>(
 
 fn parse_settings(json: &str) -> anyhow::Result<Settings> {
     let mut s: Settings = serde_json::from_str(json)?;
-    // Only listening works here: no Windows Live Captions or screen reading, no voices, no page.
-    s.asr_backend = AsrBackend::Whisper;
+    // Listening or the screen's subtitles; no Windows Live Captions, no voices, no web page.
+    if s.asr_backend == AsrBackend::WindowsLiveCaptions {
+        s.asr_backend = AsrBackend::Whisper;
+    }
     s.speak = false;
     s.browser_source = false;
+    // The translation goes in the caption box: covering the subtitle needs the picture of the
+    // app alone, which a phone gives only when the user shares a single app.
+    s.screen_cover = false;
     Ok(s)
+}
+
+/// The recognizer's models, copied out of the app by `CaptionService` (`OcrModels.kt`).
+fn ocr_dir() -> PathBuf {
+    FILES.get().cloned().unwrap_or_default().join("ocr")
 }
 
 fn start(settings: Settings) {
     stop();
     hammurabi::i18n::set(settings.ui_language);
-    let (engine, audio) = Engine::spawn_fed(Arc::new(|| {}));
+    let (engine, fed) = Engine::spawn_fed_screen(Arc::new(|| {}));
     let target = settings.target_language.clone();
+    if settings.asr_backend == AsrBackend::ScreenText {
+        let threads = std::thread::available_parallelism().map_or(2, |n| n.get().min(4));
+        match screen::ScreenRead::new(
+            fed.screen.clone(),
+            settings.screen_area(),
+            &ocr_dir(),
+            threads,
+        ) {
+            Ok(read) => *screen_read() = Some(read),
+            Err(e) => {
+                let _ = fed
+                    .screen
+                    .send(hammurabi::screen::ScreenEvent::Error(format!("{e:#}")));
+            }
+        }
+    }
     engine.send(EngineCommand::Start(settings));
     *session() = Some(Session {
         engine: Arc::new(engine),
-        audio,
+        audio: fed.audio,
         target,
         dropped: 0,
     });
@@ -255,6 +295,54 @@ fn feed(chunk: AudioChunk) -> bool {
         }
         Err(TrySendError::Disconnected(_)) => false,
     }
+}
+
+/// `Native.screenFrame(frame, width, height, rowStride)`: a picture of the screen as an
+/// ImageReader gives it (a direct buffer of RGBA rows), while Subtitles on screen runs. False
+/// when nothing reads pictures now.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_menzo_hammurabi_Native_screenFrame<'local>(
+    mut unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    frame: JByteBuffer<'local>,
+    width: jint,
+    height: jint,
+    row_stride: jint,
+) -> jboolean {
+    unowned
+        .with_env(|env| -> jni::errors::Result<jboolean> {
+            let (Ok(w), Ok(h), Ok(stride)) = (
+                usize::try_from(width),
+                usize::try_from(height),
+                usize::try_from(row_stride),
+            ) else {
+                return Ok(false);
+            };
+            let ptr = env.get_direct_buffer_address(&frame)?;
+            let len = env.get_direct_buffer_capacity(&frame)?;
+            if ptr.is_null() {
+                return Ok(false);
+            }
+            // SAFETY: a direct buffer's memory stays valid while the Java call that passed it
+            // runs (the image stays open until this returns), and is only read here.
+            let rgba = unsafe { std::slice::from_raw_parts(ptr.cast_const(), len) };
+            Ok(screen_frame(rgba, w, h, stride))
+        })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+fn screen_frame(rgba: &[u8], w: usize, h: usize, stride: usize) -> bool {
+    let mut guard = screen_read();
+    let Some(read) = guard.as_mut() else {
+        return false;
+    };
+    if let Err(e) = read.frame(rgba, w, h, stride) {
+        // The engine has been told, stops, and says why.
+        log::error!("screen: {e:#}");
+        *guard = None;
+        return false;
+    }
+    true
 }
 
 /// `Native.poll(timeoutMs)`: the next event as JSON, or null when none came in that time.
@@ -323,6 +411,7 @@ pub extern "system" fn Java_dev_menzo_hammurabi_Native_stop<'local>(
 }
 
 fn stop() {
+    *screen_read() = None;
     let Some(s) = session().take() else {
         return;
     };

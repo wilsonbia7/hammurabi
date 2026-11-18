@@ -12,6 +12,9 @@ enum class Source(val engineName: String) {
     /** What other apps play: videos, music, games. Calls, and apps that forbid it, stay unheard. */
     SYSTEM("System"),
     BOTH("Both"),
+
+    /** Subtitles on screen: a video's or a game's own subtitles, read instead of listened to. */
+    SCREEN("System"),
 }
 
 /** The choices on the main screen, kept between launches. */
@@ -31,6 +34,7 @@ data class Choices(
 ) {
     /** The engine's settings (`Settings` in src/settings.rs); fields left out keep its defaults. */
     fun settingsJson(): String = JSONObject()
+        .put("asr_backend", if (source == Source.SCREEN) "ScreenText" else "Whisper")
         .put("source", source.engineName)
         .put("spoken_language", spoken ?: JSONObject.NULL)
         .put("translate", translate)

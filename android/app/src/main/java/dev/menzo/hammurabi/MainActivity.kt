@@ -44,6 +44,8 @@ class MainActivity : Activity() {
     private lateinit var overlay: Switch
     private lateinit var showOriginal: Switch
     private lateinit var threads: Spinner
+    private lateinit var modelViews: List<View>
+    private lateinit var screenNote: TextView
 
     // Fallbacks for when the engine does not load; `Native.info` replaces them.
     private var sourceLangs = listOf("en", "tr")
@@ -85,6 +87,8 @@ class MainActivity : Activity() {
         overlay = requireViewById(R.id.overlay)
         showOriginal = requireViewById(R.id.show_original)
         threads = requireViewById(R.id.threads)
+        modelViews = listOf(requireViewById(R.id.label_model), model, requireViewById(R.id.model_note))
+        screenNote = requireViewById(R.id.screen_note)
         defaultStatusColor = statusView.currentTextColor
 
         val error = Engine.setup(this)
@@ -123,8 +127,14 @@ class MainActivity : Activity() {
     }
 
     private fun fill(c: Choices) {
+        // In the order of `Source`.
         source.adapter = adapter(
-            listOf(getString(R.string.source_mic), getString(R.string.source_system), getString(R.string.source_both)),
+            listOf(
+                getString(R.string.source_mic),
+                getString(R.string.source_system),
+                getString(R.string.source_both),
+                getString(R.string.source_screen),
+            ),
         )
         source.setSelection(c.source.ordinal)
         spoken.adapter = adapter(listOf(getString(R.string.spoken_auto)) + sourceLangs.map { languageName(it) })
@@ -184,6 +194,10 @@ class MainActivity : Activity() {
     private fun updateEnabled() {
         target.isEnabled = translate.isChecked
         translateNote.visibility = if (translate.isChecked) View.VISIBLE else View.GONE
+        // Subtitles on screen use no speech model.
+        val screen = readChoices().source == Source.SCREEN
+        modelViews.forEach { it.visibility = if (screen) View.GONE else View.VISIBLE }
+        screenNote.visibility = if (screen) View.VISIBLE else View.GONE
     }
 
     private fun onToggle() {
@@ -213,8 +227,10 @@ class MainActivity : Activity() {
         }
         if (c.source != Source.MIC) {
             val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            // The whole screen rather than one app: the sound of every app is then heard.
-            val consent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // Listening takes the whole screen rather than one app: the sound of every app is then
+            // heard. Subtitles on screen lets the user share one app, whose picture then holds no
+            // captions of ours.
+            val consent = if (c.source != Source.SCREEN && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
             } else {
                 manager.createScreenCaptureIntent()

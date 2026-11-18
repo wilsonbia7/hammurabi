@@ -9,6 +9,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
 import android.graphics.drawable.Icon
 import android.media.AudioAttributes
 import android.media.AudioFormat
@@ -39,6 +40,7 @@ class CaptionService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private var projection: MediaProjection? = null
     private val recorders = mutableListOf<Recorder>()
+    private var capture: ScreenCapture? = null
     private var overlay: CaptionOverlay? = null
 
     /** Bumped at every start and stop: a poller from an earlier start sees it changed and ends. */
@@ -57,6 +59,12 @@ class CaptionService : Service() {
         return START_NOT_STICKY
     }
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // The screen turned: the pictures read turn with it.
+        capture?.resize()
+    }
+
     override fun onDestroy() {
         end()
         super.onDestroy()
@@ -67,7 +75,7 @@ class CaptionService : Service() {
         val source = runCatching { Source.valueOf(intent.getStringExtra(EXTRA_SOURCE)!!) }.getOrDefault(Source.MIC)
         val settings = intent.getStringExtra(EXTRA_SETTINGS) ?: "{}"
         var type = 0
-        if (source != Source.SYSTEM) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        if (source == Source.MIC || source == Source.BOTH) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         if (source != Source.MIC) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
         try {
             startForeground(NOTIFICATION_ID, notification(), type)
@@ -93,14 +101,22 @@ class CaptionService : Service() {
                 override fun onStop() {
                     main.post { end() }
                 }
+
+                // Android 14: the app shared alone took another size.
+                override fun onCapturedContentResize(width: Int, height: Int) {
+                    capture?.resize(width, height)
+                }
             }, main)
             projection = p
         }
         val wantsOverlay = intent.getBooleanExtra(EXTRA_OVERLAY, false)
         val showOriginal = intent.getBooleanExtra(EXTRA_SHOW_ORIGINAL, true)
         Engine.run {
-            val error = Engine.setup(this)
-                ?: if (Native.start(settings)) null else getString(R.string.error_settings)
+            val error = Engine.setup(this) ?: when {
+                source == Source.SCREEN && !OcrModels.ensure(this) -> getString(R.string.error_ocr_models)
+                !Native.start(settings) -> getString(R.string.error_settings)
+                else -> null
+            }
             main.post {
                 // Stopped meanwhile: the stop queued after this start ends the engine.
                 if (!running) return@post
@@ -110,7 +126,8 @@ class CaptionService : Service() {
                 }
                 startListening(source)
                 if (running && wantsOverlay && Settings.canDrawOverlays(this)) {
-                    overlay = CaptionOverlay(this, showOriginal).also { it.show() }
+                    // Over the screen's subtitles, captions stand at the top, out of the band read.
+                    overlay = CaptionOverlay(this, showOriginal, top = source == Source.SCREEN).also { it.show() }
                 }
             }
         }
@@ -118,8 +135,13 @@ class CaptionService : Service() {
 
     private fun startListening(source: Source) {
         try {
-            projection?.let { recorders += Recorder.system(it) }
-            if (source != Source.SYSTEM) recorders += Recorder.microphone()
+            val p = projection
+            if (source == Source.SCREEN && p != null) {
+                capture = ScreenCapture(this, p).also { it.start() }
+            } else {
+                p?.let { recorders += Recorder.system(it) }
+                if (source == Source.MIC || source == Source.BOTH) recorders += Recorder.microphone()
+            }
         } catch (e: RuntimeException) {
             fail(getString(R.string.error_recorder, e.message ?: e.toString()))
             return
@@ -155,6 +177,8 @@ class CaptionService : Service() {
         generation++
         recorders.forEach { it.stop() }
         recorders.clear()
+        capture?.stop()
+        capture = null
         overlay?.hide()
         overlay = null
         val p = projection

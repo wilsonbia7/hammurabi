@@ -62,6 +62,12 @@
             android:text="@string/projection_note" />
 
         <TextView
+            android:id="@+id/screen_note"
+            style="@style/Note"
+            android:text="@string/screen_note"
+            android:visibility="gone" />
+
+        <TextView
             style="@style/Label"
             android:text="@string/label_spoken" />
 
@@ -93,6 +99,7 @@
             style="@style/Note" />
 
         <TextView
+            android:id="@+id/label_model"
             style="@style/Label"
             android:text="@string/label_model" />
 
@@ -102,6 +109,7 @@
             android:layout_height="wrap_content" />
 
         <TextView
+            android:id="@+id/model_note"
             style="@style/Note"
             android:text="@string/model_note" />
 
