@@ -28,6 +28,9 @@ object OcrModels {
             true
         } catch (e: java.io.IOException) {
             false
+        } catch (e: IllegalStateException) {
+            // The copy could not be put in place: reported as no models, not a crash.
+            false
         }
     }
 }

@@ -63,7 +63,7 @@ jobs:
       # Builds the engine (the app's buildRust task) and the app.
       - name: Build the APK
         working-directory: android
-        run: ./gradlew --no-daemon assembleDebug
+        run: ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest
 
       - name: Upload the APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -72,12 +72,25 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-  # Opens the app on an emulator: a crash at start fails here, with Android's log of it.
+      - name: Upload the on-device tests
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hammurabi-android-tests
+          path: android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          if-no-files-found: error
+
+      # After the upload: what lint finds does not keep the APK from being tried.
+      - name: Lint
+        working-directory: android
+        run: ./gradlew --no-daemon lintDebug
+
+  # The on-device tests and the app as a person uses it, on an emulator: a failure shows here, with
+  # Android's log of it.
   opens:
-    name: opens on an emulator
+    name: runs on an emulator
     needs: apk
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 50
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -87,18 +100,27 @@ jobs:
           name: hammurabi-android
           path: apk
 
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: hammurabi-android-tests
+          path: apk
+
       - name: Let the emulator use KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      # An x86_64 image: it runs the app's arm64 code by translation.
-      - name: Open the app
+      # An x86_64 image: it runs the app's arm64 code by translation. A phone's screen size, so the
+      # text read is a phone's.
+      - name: Test on the emulator
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 34
           target: google_apis
           arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          disk-size: 6000M
           disable-animations: true
-          script: sh android/smoke.sh apk/app-debug.apk
+          script: sh android/smoke.sh apk/app-debug.apk apk/app-debug-androidTest.apk

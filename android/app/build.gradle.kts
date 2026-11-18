@@ -21,6 +21,8 @@ android {
         versionName = "0.1.0"
         // Phones of the last decade; the speech model is too slow on older 32-bit ones anyway.
         ndk { abiFilters += listOf("arm64-v8a") }
+        // The on-device tests (src/androidTest), run on an emulator in CI.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -35,6 +37,13 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    lint {
+        // The report in the build's log, where CI shows it.
+        textReport = true
+        textOutput = file("stdout")
+        checkReleaseBuilds = false
+    }
 }
 
 kotlin {
@@ -46,6 +55,11 @@ kotlin {
 dependencies {
     // libonnxruntime.so for the engine's voice detector (Silero VAD). Its Java API goes unused.
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.27.0")
+
+    // The on-device tests only; the app itself uses no AndroidX.
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("junit:junit:4.13.2")
 }
 
 // The engine: android/rust, built with cargo-ndk into jniLibs before every build (cargo is

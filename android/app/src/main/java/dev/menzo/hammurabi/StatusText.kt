@@ -13,6 +13,13 @@ object StatusText {
     /** How long "Reading the screen" or "Listening" stays once captions run. */
     private const val RUNNING_MS = 3_000L
 
+    /**
+     * How long a download's line stays after its last news (downloads tell every few hundred milliseconds),
+     * and a model's loading (which tells nothing until it is done): no stale line when it is over.
+     */
+    private const val DOWNLOAD_MS = 15_000L
+    private const val LOADING_MS = 60_000L
+
     /** The line for [e], or null when it is not about how things go. [source]: what captions are made of. */
     fun of(context: Context, e: JSONObject, source: Source?): Line? = when (e.optString("t")) {
         "state" -> when (e.optString("state")) {
@@ -31,14 +38,15 @@ object StatusText {
             val name = e.optString("model")
             val done = e.optLong("done")
             val total = e.optLong("total", 0L)
+            val loading = e.optString("phase") == "loading"
             Line(
                 when {
-                    e.optString("phase") == "loading" -> context.getString(R.string.loading_model, name)
+                    loading -> context.getString(R.string.loading_model, name)
                     total > 0 -> context.getString(R.string.downloading, name, (done * 100 / total).toInt())
                     else -> context.getString(R.string.downloading_size, name, done / 1_000_000)
                 },
                 false,
-                0L,
+                if (loading) LOADING_MS else DOWNLOAD_MS,
             )
         }
         else -> null

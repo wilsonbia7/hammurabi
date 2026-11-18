@@ -23,6 +23,11 @@ class CaptionTile : TileService() {
             update(false)
             return
         }
+        // On the lock screen, Android asks to unlock first: screen sharing is asked for over the app then.
+        if (isLocked) unlockAndRun { askToStart() } else askToStart()
+    }
+
+    private fun askToStart() {
         val start = Intent(this, StartActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startActivityAndCollapse(PendingIntent.getActivity(this, 0, start, PendingIntent.FLAG_IMMUTABLE))

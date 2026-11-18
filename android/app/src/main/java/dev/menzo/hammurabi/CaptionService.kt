@@ -41,6 +41,7 @@ private const val TAG = "hammurabi"
 class CaptionService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private var projection: MediaProjection? = null
+    private var projectionCallback: MediaProjection.Callback? = null
     private val recorders = mutableListOf<Recorder>()
     private var capture: ScreenCapture? = null
     private var overlay: CaptionOverlay? = null
@@ -100,18 +101,21 @@ class CaptionService : Service() {
                 fail(getString(R.string.error_projection))
                 return
             }
-            // Stopped from the status bar or the screen lock: captions end too.
-            p.registerCallback(object : MediaProjection.Callback() {
+            // Stopped from the status bar or the screen lock: captions end too. Only this projection's
+            // end: one stopped for a new start must not end that.
+            val callback = object : MediaProjection.Callback() {
                 override fun onStop() {
-                    main.post { end() }
+                    main.post { if (projection === p) end() }
                 }
 
                 // Android 14: the app shared alone took another size.
                 override fun onCapturedContentResize(width: Int, height: Int) {
-                    capture?.resize(width, height)
+                    if (projection === p) capture?.resize(width, height)
                 }
-            }, main)
+            }
+            p.registerCallback(callback, main)
             projection = p
+            projectionCallback = callback
         }
         val wantsOverlay = intent.getBooleanExtra(EXTRA_OVERLAY, false)
         val showOriginal = intent.getBooleanExtra(EXTRA_SHOW_ORIGINAL, true)
@@ -202,6 +206,8 @@ class CaptionService : Service() {
         overlay = null
         val p = projection
         projection = null
+        projectionCallback?.let { c -> p?.let { runCatching { it.unregisterCallback(c) } } }
+        projectionCallback = null
         p?.stop()
         Engine.run { Native.stop() }
     }
