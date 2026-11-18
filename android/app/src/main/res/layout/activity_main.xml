@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/captions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/captions_background"
+            android:gravity="center"
+            android:minHeight="140dp"
+            android:padding="14dp"
+            android:shadowColor="#ff000000"
+            android:shadowDy="1"
+            android:shadowRadius="4"
+            android:text="@string/captions_hint"
+            android:textColor="#ccffffff"
+            android:textSize="17sp" />
+
+        <Button
+            android:id="@+id/toggle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:minHeight="56dp"
+            android:text="@string/start"
+            android:textSize="18sp" />
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/stats"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:alpha="0.7"
+            android:textSize="13sp" />
+
+        <TextView
+            style="@style/Label"
+            android:text="@string/label_source" />
+
+        <Spinner
+            android:id="@+id/source"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <TextView
+            style="@style/Note"
+            android:text="@string/projection_note" />
+
+        <TextView
+            style="@style/Label"
+            android:text="@string/label_spoken" />
+
+        <Spinner
+            android:id="@+id/spoken"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <Switch
+            android:id="@+id/translate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:minHeight="48dp"
+            android:text="@string/translate"
+            android:textSize="16sp" />
+
+        <TextView
+            style="@style/Label"
+            android:text="@string/label_target" />
+
+        <Spinner
+            android:id="@+id/target"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <TextView
+            android:id="@+id/translate_note"
+            style="@style/Note" />
+
+        <TextView
+            style="@style/Label"
+            android:text="@string/label_model" />
+
+        <Spinner
+            android:id="@+id/model"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <TextView
+            style="@style/Note"
+            android:text="@string/model_note" />
+
+        <Switch
+            android:id="@+id/overlay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:minHeight="48dp"
+            android:text="@string/overlay"
+            android:textSize="16sp" />
+
+        <Switch
+            android:id="@+id/show_original"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/show_original"
+            android:textSize="16sp" />
+
+        <TextView
+            style="@style/Label"
+            android:text="@string/label_threads" />
+
+        <Spinner
+            android:id="@+id/threads"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <TextView
+            style="@style/Note"
+            android:text="@string/threads_note" />
+
+        <TextView
+            style="@style/Note"
+            android:layout_marginTop="24dp"
+            android:text="@string/privacy" />
+    </LinearLayout>
+</ScrollView>

@@ -1,0 +1,9 @@
+.gradle/
+.idea/
+.kotlin/
+build/
+local.properties
+*.iml
+# Built from android/rust by the buildRust task.
+app/src/main/jniLibs/
+rust/target/

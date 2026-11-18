@@ -1,0 +1,73 @@
+name: Android
+
+on:
+  # Any branch, so a fork's branch builds an APK too.
+  push:
+    paths: &android
+      - "android/**"
+      - "src/**"
+      - "assets/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths: *android
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  apk:
+    name: apk (arm64)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: aarch64-linux-android
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: android/rust
+
+      # The runner's Android SDK has the NDK; cargo-ndk finds it through ANDROID_NDK_HOME.
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --version 4.1.2 --locked
+
+      - name: Format check
+        working-directory: android/rust
+        run: cargo fmt --check
+
+      - name: Clippy
+        working-directory: android/rust
+        run: cargo ndk --target arm64-v8a clippy
+
+      # Builds the engine (the app's buildRust task) and the app.
+      - name: Build the APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hammurabi-android
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

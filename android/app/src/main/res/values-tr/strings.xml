@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="start">Başlat</string>
+    <string name="stop">Durdur</string>
+    <string name="captions_hint">Altyazılar burada görünür.</string>
+
+    <string name="label_source">Ne dinlensin?</string>
+    <string name="source_mic">Mikrofon (yanınızda konuşanlar)</string>
+    <string name="source_system">Telefonun sesi (videolar, uygulamalar)</string>
+    <string name="source_both">İkisi birden</string>
+    <string name="projection_note">Telefonun sesi için Android ekranı paylaşma izni sorar. Hammurabi yalnızca sesi dinler, ekranın görüntüsünü almaz.</string>
+
+    <string name="label_spoken">Konuşulan dil</string>
+    <string name="spoken_auto">Otomatik algıla</string>
+    <string name="translate">Çevir</string>
+    <string name="label_target">Şu dile</string>
+    <string name="translate_note">İlk seferde çeviri modeli indirilir (%s, Wi-Fi önerilir).</string>
+
+    <string name="label_model">Konuşma modeli</string>
+    <string name="model_note">Tiny çoğu telefonda yetişir. Base daha iyi duyar ama hızlı bir telefon ister.</string>
+    <string name="downloaded">indirildi</string>
+
+    <string name="overlay">Altyazıyı diğer uygulamaların üstünde göster</string>
+    <string name="show_original">Aslını da göster</string>
+    <string name="label_threads">İşlemci çekirdeği</string>
+    <string name="threads_auto">Otomatik</string>
+    <string name="threads_note">Uygulama yeniden açılınca geçerli olur.</string>
+    <string name="privacy">Konuşma bu telefonda tanınır ve çevrilir; ses telefondan çıkmaz. Modeller bir kez Hugging Face\'ten indirilir.</string>
+
+    <string name="overlay_title">Diğer uygulamaların üstünde altyazı</string>
+    <string name="overlay_message">Altyazıyı bir videonun üstünde göstermek için Hammurabi\'ye diğer uygulamaların üzerinde gösterme izni verin.</string>
+    <string name="overlay_allow">İzin ver</string>
+    <string name="overlay_skip">Şimdi değil</string>
+
+    <string name="need_microphone">Dinleyebilmek için mikrofon izni gerekiyor.</string>
+    <string name="projection_denied">Ekran paylaşma izni olmadan telefonun sesi duyulamaz.</string>
+    <string name="state_loading">Hazırlanıyor…</string>
+    <string name="state_running">Dinliyor</string>
+    <string name="downloading">%1$s indiriliyor: %%%2$d</string>
+    <string name="downloading_size">%1$s indiriliyor: %2$d MB</string>
+    <string name="loading_model">%s yükleniyor…</string>
+    <string name="stats">Duyma süresi %1$d ms · %2$s</string>
+
+    <string name="channel_name">Altyazılar</string>
+    <string name="notification_title">Hammurabi dinliyor</string>
+    <string name="notification_text">Açmak için dokunun ya da buradan durdurun.</string>
+
+    <string name="error_projection">Telefonun sesi dinlenemedi.</string>
+    <string name="error_settings">Ayarlar okunamadı.</string>
+    <string name="error_recorder">Kayıt başlamadı: %s</string>
+    <string name="error_engine">Motor beklenmedik şekilde durdu.</string>
+    <string name="setup_failed">Motor bu telefonda çalışamıyor: %s</string>
+</resources>

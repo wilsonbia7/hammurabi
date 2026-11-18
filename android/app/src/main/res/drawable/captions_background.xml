@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The captions' box, as on the overlay: dark whatever the theme, so white text reads. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#e6101418" />
+    <corners android:radius="12dp" />
+</shape>

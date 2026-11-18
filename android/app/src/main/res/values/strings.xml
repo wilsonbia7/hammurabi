@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Hammurabi</string>
+    <string name="start">Start</string>
+    <string name="stop">Stop</string>
+    <string name="captions_hint">Captions appear here.</string>
+
+    <string name="label_source">Listen to</string>
+    <string name="source_mic">Microphone (people near you)</string>
+    <string name="source_system">The phone\'s sound (videos, apps)</string>
+    <string name="source_both">Both</string>
+    <string name="projection_note">For the phone\'s sound Android asks to share the screen. Hammurabi only listens; it takes no pictures of the screen.</string>
+
+    <string name="label_spoken">Spoken language</string>
+    <string name="spoken_auto">Detect</string>
+    <string name="translate">Translate</string>
+    <string name="label_target">Into</string>
+    <string name="translate_note">The first time, the translation model downloads (%s; Wi-Fi recommended).</string>
+
+    <string name="label_model">Speech model</string>
+    <string name="model_note">Tiny keeps up on most phones. Base hears better but needs a fast phone.</string>
+    <string name="downloaded">downloaded</string>
+
+    <string name="overlay">Show captions over other apps</string>
+    <string name="show_original">Also show the original</string>
+    <string name="label_threads">Processor cores</string>
+    <string name="threads_auto">Auto</string>
+    <string name="threads_note">Takes effect when the app starts again.</string>
+    <string name="privacy">Speech is recognized and translated on this phone; the audio never leaves it. The models download once, from Hugging Face.</string>
+
+    <string name="overlay_title">Captions over other apps</string>
+    <string name="overlay_message">To show captions over a video, allow Hammurabi to display over other apps.</string>
+    <string name="overlay_allow">Allow</string>
+    <string name="overlay_skip">Not now</string>
+
+    <string name="need_microphone">Hammurabi needs the microphone permission to listen.</string>
+    <string name="projection_denied">Without screen sharing, the phone\'s sound cannot be heard.</string>
+    <string name="state_loading">Getting ready…</string>
+    <string name="state_running">Listening</string>
+    <string name="downloading">Downloading %1$s: %2$d%%</string>
+    <string name="downloading_size">Downloading %1$s: %2$d MB</string>
+    <string name="loading_model">Loading %s…</string>
+    <string name="stats">Hearing takes %1$d ms · %2$s</string>
+
+    <string name="channel_name">Captions</string>
+    <string name="notification_title">Hammurabi is listening</string>
+    <string name="notification_text">Tap to open, or stop here.</string>
+
+    <string name="error_projection">Could not start listening to the phone\'s sound.</string>
+    <string name="error_settings">The settings could not be read.</string>
+    <string name="error_recorder">Recording could not start: %s</string>
+    <string name="error_engine">The engine stopped unexpectedly.</string>
+    <string name="setup_failed">The engine cannot run on this phone: %s</string>
+</resources>
