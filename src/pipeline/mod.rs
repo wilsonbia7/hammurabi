@@ -829,6 +829,12 @@ pub struct Engine {
     fed: bool,
     audio_tx: Sender<AudioChunk>,
     audio_rx: Receiver<AudioChunk>,
+    /// A fed engine's subtitles read off the screen arrive here from outside (`Fed::screen`).
+    screen_in: Receiver<ScreenEvent>,
+    /// Kept so that `screen_in` stays open when the sender handed out is dropped.
+    _screen_tx: Sender<ScreenEvent>,
+    /// A fed engine is reading subtitles that are sent to it.
+    screen_fed: bool,
     frames: Frames16k,
     buf: Vec<Vec<f32>>,
     last_audio: Instant,
@@ -864,13 +870,23 @@ impl Engine {
     /// An engine that never opens audio devices; while running it consumes the chunks sent
     /// through the returned sender instead.
     pub fn spawn_fed(notifier: Notifier) -> (EngineHandle, Sender<AudioChunk>) {
+        let (handle, fed) = Self::spawn_inner(notifier, true);
+        (handle, fed.audio)
+    }
+
+    /// As `spawn_fed`, and Subtitles on screen take what is sent through `Fed::screen` in place
+    /// of reading the screen: for an app that captures the screen its own way (Android) and
+    /// reads the subtitles itself.
+    pub fn spawn_fed_screen(notifier: Notifier) -> (EngineHandle, Fed) {
         Self::spawn_inner(notifier, true)
     }
 
-    fn spawn_inner(notifier: Notifier, fed: bool) -> (EngineHandle, Sender<AudioChunk>) {
+    fn spawn_inner(notifier: Notifier, fed: bool) -> (EngineHandle, Fed) {
         let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
         let (audio_tx, audio_rx) = crossbeam_channel::bounded(256);
         let feed_tx = audio_tx.clone();
+        let (screen_tx, screen_in) = crossbeam_channel::unbounded();
+        let read_tx = screen_tx.clone();
         let (event_tx, event_rx) = crossbeam_channel::unbounded();
         let (done_tx, done) = crossbeam_channel::bounded::<()>(1);
         let exit = ExitSignal {
@@ -904,6 +920,9 @@ impl Engine {
                     fed,
                     audio_tx,
                     audio_rx,
+                    screen_in,
+                    _screen_tx: screen_tx,
+                    screen_fed: false,
                     frames: Frames16k::new(),
                     buf: Vec::new(),
                     last_audio: now,
@@ -935,7 +954,10 @@ impl Engine {
                 event_rx,
                 done,
             },
-            feed_tx,
+            Fed {
+                audio: feed_tx,
+                screen: read_tx,
+            },
         )
     }
 
@@ -1385,6 +1407,9 @@ impl Engine {
         {
             self.screen = None;
         }
+        self.screen_fed = false;
+        // What was read for this run is not read in the next.
+        while self.screen_in.try_recv().is_ok() {}
         self.running = false;
         self.capture_lost = false;
         self.screen_notice = false;
@@ -1515,19 +1540,23 @@ impl Engine {
 
     #[cfg(windows)]
     fn screen_active(&self) -> bool {
-        self.screen.is_some()
+        self.screen.is_some() || self.screen_fed
     }
 
     #[cfg(not(windows))]
     fn screen_active(&self) -> bool {
-        false
+        self.screen_fed
     }
 
     /// Starts reading subtitles off the screen when that is chosen; false = listen.
     fn start_screen(&mut self) -> bool {
         let s = &self.core.settings;
-        if s.asr_backend != AsrBackend::ScreenText || self.fed {
+        if s.asr_backend != AsrBackend::ScreenText {
             return false;
+        }
+        if self.fed {
+            self.screen_fed = true;
+            return true;
         }
         #[cfg(windows)]
         {
@@ -1551,6 +1580,9 @@ impl Engine {
 
     #[cfg(windows)]
     fn screen_rx(&self) -> Receiver<ScreenEvent> {
+        if self.screen_fed {
+            return self.screen_in.clone();
+        }
         self.screen
             .as_ref()
             .map_or_else(never, |s| s.events.clone())
@@ -1558,7 +1590,11 @@ impl Engine {
 
     #[cfg(not(windows))]
     fn screen_rx(&self) -> Receiver<ScreenEvent> {
-        never()
+        if self.screen_fed {
+            self.screen_in.clone()
+        } else {
+            never()
+        }
     }
 
     fn on_screen(&mut self, ev: ScreenEvent) {
@@ -1618,6 +1654,7 @@ impl Engine {
                 {
                     self.screen = None;
                 }
+                self.screen_fed = false;
                 if self.running {
                     log::error!("reading subtitles off the screen failed: {e}");
                     self.stop();
@@ -1829,6 +1866,15 @@ impl Drop for ExitSignal {
     }
 }
 
+/// Where a fed engine takes what it would capture itself (`Engine::spawn_fed_screen`).
+pub struct Fed {
+    /// Audio, while listening.
+    pub audio: Sender<AudioChunk>,
+    /// Subtitles read off the screen (`ScreenEvent::Ready`, then `Line`s and `Place`s), while
+    /// Subtitles on screen is chosen.
+    pub screen: Sender<ScreenEvent>,
+}
+
 pub struct EngineHandle {
     cmd_tx: Sender<EngineCommand>,
     event_rx: Receiver<EngineEvent>,
@@ -1996,6 +2042,37 @@ mod tests {
         }
         assert!(engine.finished());
         assert!(woken.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn a_fed_engine_reads_the_subtitles_sent_to_it() {
+        let (engine, fed) = Engine::spawn_fed_screen(Arc::new(|| {}));
+        engine.send(EngineCommand::Start(Settings {
+            asr_backend: AsrBackend::ScreenText,
+            spoken_language: Some("en".into()),
+            translate: false,
+            ..Settings::default()
+        }));
+        fed.screen
+            .send(ScreenEvent::Ready("the screen".into()))
+            .unwrap();
+        fed.screen
+            .send(ScreenEvent::Line("Where did you put the keys?".into()))
+            .unwrap();
+        let t = Instant::now();
+        let (mut running, mut caption) = (false, None);
+        while caption.is_none() && t.elapsed() < Duration::from_secs(5) {
+            match engine.recv_timeout(Duration::from_millis(50)) {
+                Some(EngineEvent::State(EngineState::Running)) => running = true,
+                Some(EngineEvent::Caption(CaptionUpdate::Final { original, .. })) => {
+                    caption = Some(original)
+                }
+                _ => {}
+            }
+        }
+        assert!(running);
+        assert_eq!(caption.as_deref(), Some("Where did you put the keys?"));
+        engine.send(EngineCommand::Shutdown);
     }
 
     #[test]
