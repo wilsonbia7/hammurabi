@@ -16,6 +16,13 @@ echo "---- on-device tests ----"
 adb shell am instrument -w "$pkg.test/androidx.test.runner.AndroidJUnitRunner" > instrument.txt 2>&1
 cat instrument.txt
 grep -q "^OK (" instrument.txt || { echo "On-device tests failed."; fail=1; }
+# How the captions look over the screen, as the overlay test left it.
+if adb shell run-as "$pkg" cat files/overlay.png > overlay.png 2> /dev/null && [ -s overlay.png ]; then
+  echo "---- overlay.png base64 ----"
+  base64 -w 0 overlay.png
+  echo
+  echo "---- end ----"
+fi
 adb logcat -d -v time | grep -E "hammurabi|AndroidRuntime" | grep -v "AppsFilter\|WindowManager\|CarrierSvc\|ImsResolver" | tail -150
 adb logcat -c
 

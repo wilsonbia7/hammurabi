@@ -1,5 +1,6 @@
 package dev.menzo.hammurabi
 
+import android.graphics.Bitmap
 import android.os.SystemClock
 import android.provider.Settings
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -10,6 +11,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 import kotlin.math.abs
 
 /** The captions over other apps: at the bottom middle, there only while there is something to show. */
@@ -60,6 +62,19 @@ class CaptionOverlayTest {
         instrumentation.runOnMainSync { CaptionBus.emit(JSONObject(final.toString()).put("tr", "Yarın görüşürüz")) }
         until("the translation") { OverlayArea.rect != null }
         assertNotNull(OverlayArea.rect)
+        // A post's translation, longer: how it looks goes to files/overlay.png (CI shows it).
+        instrumentation.runOnMainSync {
+            CaptionBus.emit(
+                JSONObject().put("t", "final").put("id", 2).put("same", false)
+                    .put("o", "I can't believe how fast this year went by. Thank you all for being part of this journey!")
+                    .put("tr", "Bu yılın ne kadar hızlı geçtiğine inanamıyorum. Bu yolculuğun parçası olduğunuz için hepinize teşekkürler!"),
+            )
+        }
+        SystemClock.sleep(1_000)
+        instrumentation.uiAutomation.takeScreenshot()?.let { shot ->
+            val small = Bitmap.createScaledBitmap(shot, shot.width / 3, shot.height / 3, true)
+            File(context.filesDir, "overlay.png").outputStream().use { small.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
 
         instrumentation.runOnMainSync { overlay.hide() }
         assertNull(OverlayArea.rect)
