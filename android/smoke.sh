@@ -54,12 +54,18 @@ adb push settings.xml /data/local/tmp/settings.xml > /dev/null
 adb shell "run-as $pkg sh -c 'mkdir -p shared_prefs && cp /data/local/tmp/settings.xml shared_prefs/settings.xml && rm -f shared_prefs/bubble.xml'"
 
 ui() {
+  adb shell rm -f /sdcard/ui.xml
   adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
   adb shell cat /sdcard/ui.xml
 }
 # Taps the middle of the first node matching $1 in the screen's layout.
 tap() {
   b=$(ui | tr '>' '\n' | grep -m1 "$1" | sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p')
+  # The screen's description can come out empty while a window changes: once more.
+  if [ -z "$b" ]; then
+    sleep 2
+    b=$(ui | tr '>' '\n' | grep -m1 "$1" | sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p')
+  fi
   [ -n "$b" ] || return 1
   set -- $b
   adb shell input tap $((($1 + $3) / 2)) $((($2 + $4) / 2))
@@ -180,7 +186,7 @@ if ! seen "menu: shown" 10 && [ -n "$at" ]; then echo "Held again."; sleep 2; ad
 if seen "menu: shown" 10; then echo "The menu shows."; else echo "No menu."; fail=1; fi
 # A tap outside closes it.
 adb shell input tap 60 300
-sleep 1
+if seen "menu: closed" 6; then echo "A tap outside closes the menu."; else echo "The menu stayed after a tap outside; tapping again."; adb shell input tap 60 300; sleep 2; fi
 log
 running || { echo "Hammurabi stopped."; fail=1; }
 

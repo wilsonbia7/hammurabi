@@ -441,8 +441,10 @@ class BubbleMenu(private val context: Context, private val actions: Actions) {
     }
 
     fun dismiss() {
-        root?.let { runCatching { wm.removeView(it) } }
+        val r = root ?: return
+        runCatching { wm.removeView(r) }
         root = null
+        AppLog.i("menu: closed")
     }
 
     private fun frame() = object : LinearLayout(context) {

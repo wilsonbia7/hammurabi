@@ -44,8 +44,11 @@ Galaxy S25 and on emulators of every version from 8 to 16.
   `LiveTranslator` the watched area of each new picture, at most every 250 ms. It reads the text,
   puts lines together (`LiveText`: a centred subtitle's, a dialogue box's), waits until the text
   reads the same twice (not while it is still being written out), translates it, and `LiveOverlay`
-  shows it in a box above the text, in a window touches go through. The boxes are left out of what
-  is read; a picture like the last is not read again.
+  shows it in a box above the text, in a window touches go through. Pictures are read at 720
+  pixels wide. The boxes are painted over before reading, and their words left out of what is read
+  (a slow phone's picture can still show a box just hidden). A phone that takes over 1.5 s to read
+  a picture translates text read once when no box was on the screen: it could not read a subtitle
+  twice while it shows.
 - A screen that comes out pure black (an app with FLAG_SECURE: Netflix, banks) is told as such.
 - `AppLog` keeps the app's own log in a file (crashes too); "Copy the error log" on the main screen
   copies it with the phone and the settings, to send when something goes wrong.
@@ -109,6 +112,8 @@ needs a key of its own.
 - Live translation shows its boxes above the text rather than over it: a window covering the text
   would hide it from the next reading, and Android lets touches through only fairly see-through
   windows.
+- On a slow phone, a game line written out letter by letter can show part of its translation first;
+  the whole line's replaces it when the line is complete.
 - Some phone makers stop apps in the background (Xiaomi, Huawei, Oppo): the main screen has a button
   to leave battery saving, and notes for their own settings.
 - Read aloud and Windows Live Captions are desktop-only.
