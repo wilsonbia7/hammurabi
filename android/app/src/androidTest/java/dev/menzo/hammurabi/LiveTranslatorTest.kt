@@ -57,7 +57,7 @@ class LiveTranslatorTest {
         t.close()
     }
 
-    private fun subtitle(text: String, pureBlack: Boolean = false): Bitmap {
+    private fun subtitle(text: String, pureBlack: Boolean = false, box: Rect? = null): Bitmap {
         val b = Bitmap.createBitmap(1080, 1080, Bitmap.Config.ARGB_8888)
         val c = Canvas(b)
         c.drawColor(if (pureBlack) Color.BLACK else Color.rgb(40, 52, 70))
@@ -73,14 +73,26 @@ class LiveTranslatorTest {
             if (lines.last().length + w.length > 30) lines += w else lines[lines.size - 1] = (lines.last() + " " + w).trim()
         }
         lines.filter { it.isNotEmpty() }.forEachIndexed { i, l -> c.drawText(l, 540f, 760f + i * 70, ink) }
+        if (box != null) {
+            // Our box with the last translation, in the area's pixels.
+            val r = Rect(box).apply { offset(-area.left, -area.top) }
+            c.drawRect(r, Paint().apply { color = Color.rgb(20, 20, 20) })
+            c.drawText("Şafaktan önce ayrılmak zorundayız.", r.exactCenterX(), r.bottom - 16f, ink)
+        }
         return b
     }
 
     /** Feeds [text] for [ms], a picture whenever the translator is ready, as the capture does. */
-    private fun feed(text: String, ms: Long, pureBlack: Boolean = false, until: () -> Boolean = { false }) {
+    private fun feed(
+        text: String,
+        ms: Long,
+        pureBlack: Boolean = false,
+        box: Rect? = null,
+        until: () -> Boolean = { false },
+    ) {
         val end = SystemClock.uptimeMillis() + ms
         while (SystemClock.uptimeMillis() < end && !until()) {
-            if (t.ready()) t.frame(subtitle(text, pureBlack), area, black = pureBlack)
+            if (t.ready()) t.frame(subtitle(text, pureBlack, box), area, black = pureBlack)
             SystemClock.sleep(120)
         }
         // The main thread's news.
@@ -123,5 +135,15 @@ class LiveTranslatorTest {
         // A black screen for a while: an app that forbids capture.
         feed("", 12_000, pureBlack = true) { black > 0 }
         assertTrue("told the screen is black", black > 0)
+    }
+
+    @Test
+    fun ourOwnBoxIsNotReadWithTheText() {
+        // The last translation's box, still just above a new subtitle until it is hidden.
+        val box = Rect(140, 1080 + 640, 940, 1080 + 705)
+        t.ours = listOf(box)
+        feed("I will never forget this night.", 360_000, box = box) { shown.isNotEmpty() }
+        assertTrue("translated: $shown", shown.isNotEmpty())
+        assertEquals("I will never forget this night.", shown.last().single().original)
     }
 }

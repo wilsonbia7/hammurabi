@@ -196,6 +196,9 @@ class LiveTranslator(private val context: Context, private val listener: Listene
     private var lastGroups: List<LiveText.Group> = emptyList()
     private val downloaded = HashSet<String>()
     private var generation = 0
+    private var readBuffer: Bitmap? = null
+    private val scalePaint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val maskPaint = Paint().apply { color = Color.GRAY }
 
     override fun ready() = !busy && !paused && !closed
 
@@ -211,9 +214,11 @@ class LiveTranslator(private val context: Context, private val listener: Listene
 
     override fun frame(bitmap: Bitmap?, area: Rect, black: Boolean) {
         busy = true
+        // Where our boxes were when the picture was taken.
+        val mine = ours
         worker.execute {
             try {
-                if (!closed && !paused) work(bitmap, area, black)
+                if (!closed && !paused) work(bitmap, area, black, mine)
             } catch (e: Exception) {
                 if (!closed) AppLog.w("live: a picture failed", e)
             } finally {
@@ -230,6 +235,10 @@ class LiveTranslator(private val context: Context, private val listener: Listene
 
     fun close() {
         closed = true
+        worker.execute {
+            readBuffer?.recycle()
+            readBuffer = null
+        }
         worker.shutdown()
     }
 
@@ -237,7 +246,7 @@ class LiveTranslator(private val context: Context, private val listener: Listene
         main.post { if (!closed) r() }
     }
 
-    private fun work(bitmap: Bitmap?, area: Rect, black: Boolean) {
+    private fun work(bitmap: Bitmap?, area: Rect, black: Boolean, mine: List<Rect>) {
         if (resetAsked) {
             resetAsked = false
             lastKey = ""
@@ -267,24 +276,16 @@ class LiveTranslator(private val context: Context, private val listener: Listene
             if (area != lastArea) return
             lastGroups
         } else {
-            // Read smaller: subtitles and dialogue are large text, and reading takes about half as long.
             val scale = if (bitmap.width > READ_WIDTH) READ_WIDTH.toFloat() / bitmap.width else 1f
-            val small = if (scale < 1f) {
-                Bitmap.createScaledBitmap(bitmap, READ_WIDTH, max(1, (bitmap.height * scale).toInt()), true)
-            } else {
-                bitmap
-            }
+            val reading = forReading(bitmap, area, scale, mine)
             val started = SystemClock.uptimeMillis()
-            val text = try {
-                Tasks.await(
-                    // Long enough for the reader's first load on a slow phone.
-                    Recognizers.get(script).process(InputImage.fromBitmap(small, 0)), 30, TimeUnit.SECONDS,
-                )
-            } finally {
-                if (small !== bitmap) small.recycle()
-            }
-            slow = SystemClock.uptimeMillis() - started > SLOW_MS
-            val mine = ours
+            val text = Tasks.await(
+                // Long enough for the reader's first load on a slow phone.
+                Recognizers.get(script).process(InputImage.fromBitmap(reading, 0)), 30, TimeUnit.SECONDS,
+            )
+            // A phone this slow reads a subtitle once while it shows: once has to do, unless our boxes were on
+            // the screen and may have hidden part of it.
+            slow = SystemClock.uptimeMillis() - started > SLOW_MS && mine.isEmpty()
             val lines = text.textBlocks.flatMap { b ->
                 b.lines.mapNotNull { l ->
                     val box = l.boundingBox ?: return@mapNotNull null
@@ -322,12 +323,40 @@ class LiveTranslator(private val context: Context, private val listener: Listene
         } else {
             if (key != lastKey) AppLog.i("live: reading \"${key.replace('\n', '|').take(120)}\"")
             lastKey = key
-            // A phone this slow reads a subtitle once while it shows: once has to do. Dialogue still being
-            // written out is translated again when it reads longer.
+            // Read once on a slow phone is enough; dialogue still being written out is translated again
+            // when it reads longer.
             stable = if (slow) 2 else 1
         }
         if (stable < 2 || handled.isNotEmpty()) return
         translate(groups, key)
+    }
+
+    /**
+     * The picture as it is read: [scale]d down (subtitles and dialogue are large text, and a smaller picture is
+     * read about twice as fast), and our own boxes painted over, so their translations are never read as part
+     * of the text next to them.
+     */
+    private fun forReading(bitmap: Bitmap, area: Rect, scale: Float, mine: List<Rect>): Bitmap {
+        val boxes = mine.filter { Rect.intersects(it, area) }
+        if (scale >= 1f && boxes.isEmpty()) return bitmap
+        val w = max(1, (bitmap.width * scale).toInt())
+        val h = max(1, (bitmap.height * scale).toInt())
+        val buf = readBuffer?.takeIf { it.width == w && it.height == h && !it.isRecycled }
+            ?: Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also {
+                readBuffer?.recycle()
+                readBuffer = it
+            }
+        val c = Canvas(buf)
+        c.drawBitmap(bitmap, null, Rect(0, 0, w, h), scalePaint)
+        val pad = 4 * scale
+        for (b in boxes) {
+            c.drawRect(
+                (b.left - area.left) * scale - pad, (b.top - area.top) * scale - pad,
+                (b.right - area.left) * scale + pad, (b.bottom - area.top) * scale + pad,
+                maskPaint,
+            )
+        }
+        return buf
     }
 
     private fun translate(groups: List<LiveText.Group>, key: String) {
