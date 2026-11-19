@@ -54,6 +54,9 @@ android {
     packaging {
         // 32-bit x86 phones are gone; ML Kit's libraries for them would only make the APK bigger.
         jniLibs.excludes += "lib/x86/**"
+        // Libraries compressed in the APK, unpacked when it is installed: an APK to download and send
+        // about half the size.
+        jniLibs.useLegacyPackaging = true
     }
 
     compileOptions {

@@ -159,4 +159,5 @@ jobs:
           ram-size: 4096M
           disk-size: 6000M
           disable-animations: true
-          script: sh android/smoke.sh apk/app-${{ matrix.abi }}-debug.apk apk/app-debug-androidTest.apk
+          # The artifact keeps the folders under apk/: debug/ and androidTest/debug/.
+          script: sh android/smoke.sh apk/debug/app-${{ matrix.abi }}-debug.apk apk/androidTest/debug/app-debug-androidTest.apk
