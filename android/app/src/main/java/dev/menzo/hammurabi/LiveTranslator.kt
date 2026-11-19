@@ -95,7 +95,8 @@ object LiveText {
     fun changed(now: String, before: String): Boolean {
         val (x, y) = key(now) to key(before)
         if (x == y) return false
-        if (x.length >= y.length + 3 && grows(x, y)) return true
+        // Two letters more is a word more ("in", "to"): the line's last word came after it was translated.
+        if (x.length >= y.length + 2 && grows(x, y)) return true
         return similarity(now, before) < 0.8 || x.length > y.length * 1.2 + 2
     }
 

@@ -56,6 +56,9 @@ class LiveTextTest {
         assertTrue(LiveText.changed("We have to leave before dawn.", "Where did you put the keys?"))
         assertTrue(LiveText.changed("The castle gates are closed. We must", "The castle gates are"))
         assertFalse(LiveText.changed("Where did you put the keys ?", "Where did you put the keys?"))
+        // The last short word written out after the rest was translated.
+        assertTrue(LiveText.changed("WE MUST FIND ANOTHER WAY IN.", "WE MUST FIND ANOTHER WAY"))
+        assertFalse(LiveText.changed("WE MUST FIND ANOTHER WAY IN.", "WE MUST FIND ANOTHER WAY IN"))
     }
 
     @Test
