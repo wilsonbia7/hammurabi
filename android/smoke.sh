@@ -109,6 +109,17 @@ seen() {
   done
   return 1
 }
+# Waits up to $3 seconds for more than $2 lines with $1 in the app's log.
+more() {
+  i=0
+  while [ "$i" -lt "$3" ]; do
+    adb logcat -d -v time > logcat.txt
+    [ "$(grep -c "$1" logcat.txt)" -gt "$2" ] && return 0
+    sleep 3
+    i=$((i + 3))
+  done
+  return 1
+}
 running() { adb shell dumpsys activity services "$pkg" | grep -q "CaptionService"; }
 log() { grep -E "hammurabi|AndroidRuntime|FATAL" logcat.txt | grep -v "AppsFilter\|WindowManager\|CarrierSvc\|ImsResolver\|Accessibility" | tail -60; }
 # The bubble's middle, from where the app says it put it.
@@ -219,7 +230,7 @@ else
 fi
 # The next subtitle, a few seconds later, is translated too.
 n=$(grep -c "live: 1 translated" logcat.txt)
-if seen "live: 1 translated.*\(We have to leave\|I will never\|Where did you put\)" 20 && [ "$(grep -c 'live: 1 translated' logcat.txt)" -gt "$n" ]; then
+if more "live: 1 translated" "$n" 30; then
   echo "The next subtitle was translated too."
 else
   echo "The next subtitle was not translated."

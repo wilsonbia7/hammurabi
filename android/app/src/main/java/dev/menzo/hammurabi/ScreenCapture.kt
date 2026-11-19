@@ -253,8 +253,9 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
     }
 
     /**
-     * Whether the screen below the status bar and above the navigation bar is pure black: what an app that
-     * forbids capture (Netflix, a bank) shows. A dark scene is not pure black all over.
+     * Whether the screen below the status bar and above the navigation bar, away from its edges (the
+     * bubble), is pure black: what an app that forbids capture (Netflix, a bank) shows. A dark scene is not
+     * pure black all over.
      */
     private fun black(image: Image): Boolean {
         val plane = image.planes[0]
@@ -262,8 +263,9 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
         val stride = plane.rowStride
         for (j in 0 until 20) {
             val y = (image.height * (0.12f + 0.76f * j / 19)).toInt()
+            // Not the screen's edges, where the bubble sits.
             for (i in 0 until 16) {
-                val x = (image.width * (0.05f + 0.9f * i / 15)).toInt()
+                val x = (image.width * (0.15f + 0.7f * i / 15)).toInt()
                 val at = y * stride + x * 4
                 if (at + 2 >= buf.capacity()) continue
                 val r = buf.get(at).toInt() and 0xff
@@ -280,7 +282,7 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
         for (j in 0 until 20) {
             val y = (bitmap.height * (0.12f + 0.76f * j / 19)).toInt().coerceIn(0, bitmap.height - 1)
             for (i in 0 until 16) {
-                val c = bitmap.getPixel((bitmap.width * (0.05f + 0.9f * i / 15)).toInt().coerceIn(0, bitmap.width - 1), y)
+                val c = bitmap.getPixel((bitmap.width * (0.15f + 0.7f * i / 15)).toInt().coerceIn(0, bitmap.width - 1), y)
                 if (maxOf(c shr 16 and 0xff, c shr 8 and 0xff, c and 0xff) > 3) return false
             }
         }

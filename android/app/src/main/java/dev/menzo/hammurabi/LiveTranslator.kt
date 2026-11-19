@@ -319,8 +319,10 @@ class LiveTranslator(private val context: Context, private val listener: Listene
             if (lang == to) continue
             val code = Languages.supported(lang) ?: continue
             if (code !in downloaded || to !in downloaded) {
-                if (!Translations.isDownloaded(code) || !Translations.isDownloaded(to)) {
-                    post { listener.onDownloading(if (Translations.isDownloaded(code)) to else code) }
+                val haveFrom = Translations.isDownloaded(code)
+                if (!haveFrom || !Translations.isDownloaded(to)) {
+                    val missing = if (haveFrom) to else code
+                    post { listener.onDownloading(missing) }
                 }
                 try {
                     Translations.ensure(code, to)
