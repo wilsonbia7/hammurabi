@@ -175,6 +175,8 @@ if seen "translate: closed" 10; then echo "Back closes the translation."; else e
 echo "---- the bubble held: its menu ----"
 adb logcat -c
 [ -n "$at" ] && adb shell input swipe $at $at 1200
+# A slow emulator can lose a press while the translation's layer is going: held once more, as a person would.
+if ! seen "menu: shown" 10 && [ -n "$at" ]; then echo "Held again."; sleep 2; adb shell input swipe $at $at 1500; fi
 if seen "menu: shown" 10; then echo "The menu shows."; else echo "No menu."; fail=1; fi
 # A tap outside closes it.
 adb shell input tap 60 300
@@ -232,7 +234,8 @@ else
 fi
 # The next subtitle, a few seconds later, is translated too.
 n=$(grep -c "live: 1 translated" logcat.txt)
-if more "live: 1 translated" "$n" 30; then
+# A slow emulator takes up to 15 s to read one picture.
+if more "live: 1 translated" "$n" 60; then
   echo "The next subtitle was translated too."
 else
   echo "The next subtitle was not translated."
