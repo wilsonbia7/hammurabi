@@ -194,11 +194,23 @@ echo "---- stop ----"
 adb shell am start -W -n "$pkg/.MainActivity"
 sleep 2
 # Back to the top, where the button is (the screen was scrolled for its pictures).
-adb shell input swipe 540 600 540 2200 200
-adb shell input swipe 540 600 540 2200 200
-sleep 1
-tap "resource-id=\"$pkg:id/toggle\"" || { echo "No Stop button."; fail=1; }
+to_top() {
+  adb shell input swipe 540 600 540 2200 300
+  adb shell input swipe 540 600 540 2200 300
+  sleep 2
+}
+to_top
+tap "resource-id=\"$pkg:id/toggle\"" || { echo "No Stop button at first; once more."; to_top; tap "resource-id=\"$pkg:id/toggle\""; } || { echo "No Stop button."; fail=1; }
 sleep 5
+if running; then
+  # Tell what the screen showed, then once more: a slow emulator can still be scrolling.
+  echo "Still running after the first Stop; on the screen:"
+  ui | tr '>' '\n' | grep -o 'resource-id="[^"]*"\|text="[^"]\{1,40\}"' | head -20
+  shot stop.png
+  to_top
+  tap "resource-id=\"$pkg:id/toggle\""
+  sleep 5
+fi
 if running; then echo "Still running after Stop."; fail=1; else echo "Stopped."; fi
 adb shell dumpsys display | grep -q "Hammurabi screen" && { echo "The screen capture was left behind."; fail=1; }
 
