@@ -216,6 +216,8 @@ sleep 1
 tap "resource-id=\"$pkg:id/toggle\"" || { echo "No Start button."; fail=1; }
 consent
 if seen "live: started" 30; then echo "Live translation started with Hammurabi."; else echo "Live translation did not start."; fail=1; fi
+seen "bubble: shown" 10
+at=$(bubble)
 adb logcat -c
 adb shell am start -W -n "$pkg.test/$pkg.SubtitleActivity"
 if seen "live: 1 translated (Where did you put the keys?\|live: 1 translated (We have to leave\|live: 1 translated (I will never" 120; then
@@ -236,6 +238,7 @@ else
   echo "The next subtitle was not translated."
   fail=1
 fi
+grep "live:" logcat.txt | tail -25
 
 echo "---- live translation: a game's dialogue, written out letter by letter ----"
 adb logcat -c
@@ -256,8 +259,6 @@ echo "---- an app that forbids capture ----"
 adb logcat -c
 adb shell am start -W -n "$pkg.test/$pkg.SecureActivity"
 if seen "live: the screen is black" 20; then echo "Live translation says the app forbids capture."; else echo "Live translation did not tell the black screen."; fail=1; fi
-adb logcat -d -v time > logcat.txt
-at=$(bubble)
 adb logcat -c
 [ -n "$at" ] && adb shell input tap $at
 if seen "translate: the screen is black" 20; then echo "Tapping the bubble says the app forbids capture."; else echo "Tapping the bubble did not tell the black screen."; fail=1; fi

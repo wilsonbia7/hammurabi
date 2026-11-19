@@ -31,8 +31,12 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
         /** The part of a screen of this size to take. */
         fun area(width: Int, height: Int): Rect
 
-        /** That part, as it is now; [black]: the whole screen is black, as an app that forbids capture shows. */
-        fun frame(bitmap: Bitmap, area: Rect, black: Boolean)
+        /**
+         * That part, as it is now; null when the screen has not changed since the last ([AGAIN_MS] later: a
+         * screen standing still gives no new pictures). [black]: the whole screen is black, as an app that
+         * forbids capture shows.
+         */
+        fun frame(bitmap: Bitmap?, area: Rect, black: Boolean)
     }
 
     private val thread = HandlerThread("hm-screen").apply { start() }
@@ -54,16 +58,27 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
     private var sink: LiveSink? = null
     private var every = 300L
     private var lastTaken = 0L
+    private var lastGiven = 0L
     private val liveTick = object : Runnable {
         override fun run() {
             val s = sink ?: return
             val image = held
-            // A new picture only: the screen standing still gives none.
-            if (image != null && image.timestamp != lastTaken && s.ready()) {
-                lastTaken = image.timestamp
-                val area = s.area(image.width, image.height)
-                val bitmap = if (area.isEmpty) null else rows(image, area)
-                if (bitmap != null) s.frame(bitmap, area, black(image))
+            val now = SystemClock.uptimeMillis()
+            if (image != null && s.ready()) {
+                val fresh = image.timestamp != lastTaken
+                // A screen standing still gives no new pictures; it is told again now and then.
+                if (fresh || now - lastGiven >= AGAIN_MS) {
+                    lastTaken = image.timestamp
+                    lastGiven = now
+                    val area = s.area(image.width, image.height)
+                    if (!area.isEmpty) {
+                        if (fresh) {
+                            rows(image, area)?.let { s.frame(it, area, black(image)) }
+                        } else {
+                            s.frame(null, area, black(image))
+                        }
+                    }
+                }
             }
             handler.postDelayed(this, every)
         }
@@ -289,12 +304,15 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
         return true
     }
 
-    private companion object {
+    companion object {
         /** How long the screen stays mirrored after a press without a picture taken (a drag, a hold). */
         const val AWAKE_MS = 4_000L
 
         /** A frame or two at 60 Hz, and room for a busy moment. */
         const val SETTLE_MS = 120L
+
+        /** How often live translation is told of a screen standing still. */
+        const val AGAIN_MS = 900L
 
         /** Pictures come at the screen's rate when anything moves; the bubble going is a move. */
         const val WAIT_MS = 800L

@@ -191,7 +191,7 @@ class LiveTranslator(private val context: Context, private val listener: Listene
     private var blackSince = 0L
     private var toldBlack = false
     private var lastLang: String? = null
-    private var thumb: IntArray? = null
+    private var lastArea = Rect()
     private var lastGroups: List<LiveText.Group> = emptyList()
     private val downloaded = HashSet<String>()
     private var generation = 0
@@ -208,15 +208,15 @@ class LiveTranslator(private val context: Context, private val listener: Listene
         )
     }
 
-    override fun frame(bitmap: Bitmap, area: Rect, black: Boolean) {
+    override fun frame(bitmap: Bitmap?, area: Rect, black: Boolean) {
         busy = true
         worker.execute {
             try {
                 if (!closed && !paused) work(bitmap, area, black)
             } catch (e: Exception) {
-                AppLog.w("live: a picture failed", e)
+                if (!closed) AppLog.w("live: a picture failed", e)
             } finally {
-                bitmap.recycle()
+                bitmap?.recycle()
                 busy = false
             }
         }
@@ -236,15 +236,15 @@ class LiveTranslator(private val context: Context, private val listener: Listene
         main.post { if (!closed) r() }
     }
 
-    private fun work(bitmap: Bitmap, area: Rect, black: Boolean) {
+    private fun work(bitmap: Bitmap?, area: Rect, black: Boolean) {
         if (resetAsked) {
             resetAsked = false
             lastKey = ""
             stable = 0
             handled = ""
-            thumb = null
             lastGroups = emptyList()
-            if (visible) hide()
+            lastArea = Rect()
+            if (visible) hide("reset")
         }
         val now = SystemClock.uptimeMillis()
         if (black) {
@@ -254,17 +254,15 @@ class LiveTranslator(private val context: Context, private val listener: Listene
                 AppLog.i("live: the screen is black")
                 post { listener.onBlack() }
             }
-            if (visible) hide()
+            if (visible) hide("black")
             return
         }
         blackSince = 0L
         toldBlack = false
 
-        // A picture like the last one reads the same: no need to read it.
-        val t = thumbnail(bitmap)
-        val unchanged = thumb?.let { close(it, t) } ?: false
-        thumb = t
-        val groups = if (unchanged) {
+        // The screen has not changed: it reads as it did.
+        val groups = if (bitmap == null) {
+            if (area != lastArea) return
             lastGroups
         } else {
             val text = Tasks.await(
@@ -280,6 +278,7 @@ class LiveTranslator(private val context: Context, private val listener: Listene
             LiveText.groups(lines)
         }
         lastGroups = groups
+        lastArea = Rect(area)
 
         if (groups.isEmpty()) {
             empty++
@@ -287,7 +286,7 @@ class LiveTranslator(private val context: Context, private val listener: Listene
             stable = 0
             if (empty >= 2) {
                 handled = ""
-                if (visible) hide()
+                if (visible) hide("no text")
             }
             return
         }
@@ -295,11 +294,12 @@ class LiveTranslator(private val context: Context, private val listener: Listene
         val key = groups.joinToString("\n") { it.text }
         if (handled.isNotEmpty() && LiveText.changed(key, handled)) {
             handled = ""
-            if (visible) hide()
+            if (visible) hide("new text")
         }
         if (LiveText.same(key, lastKey)) {
             stable++
         } else {
+            if (key != lastKey) AppLog.i("live: reading \"${key.replace('\n', '|').take(120)}\"")
             lastKey = key
             stable = 1
         }
@@ -351,7 +351,8 @@ class LiveTranslator(private val context: Context, private val listener: Listene
         post { if (gen == generation) listener.onShow(items) }
     }
 
-    private fun hide() {
+    private fun hide(why: String) {
+        AppLog.i("live: hidden ($why)")
         visible = false
         val gen = ++generation
         post { if (gen == generation) listener.onHide() }
@@ -371,27 +372,8 @@ class LiveTranslator(private val context: Context, private val listener: Listene
         return i.width().toLong() * i.height() * 2 >= line.width().toLong() * line.height()
     }
 
-    /** A small grey picture, to tell a picture like the last one. */
-    private fun thumbnail(b: Bitmap): IntArray {
-        val out = IntArray(THUMB_W * THUMB_H)
-        for (j in 0 until THUMB_H) for (i in 0 until THUMB_W) {
-            val c = b.getPixel((b.width - 1) * i / (THUMB_W - 1), (b.height - 1) * j / (THUMB_H - 1))
-            out[j * THUMB_W + i] = ((c shr 16 and 0xff) * 3 + (c shr 8 and 0xff) * 6 + (c and 0xff)) / 10
-        }
-        return out
-    }
-
-    private fun close(a: IntArray, b: IntArray): Boolean {
-        if (a.size != b.size) return false
-        var sum = 0L
-        for (i in a.indices) sum += abs(a[i] - b[i])
-        return sum.toDouble() / a.size < 1.5
-    }
-
     private companion object {
         const val BLACK_MS = 3_000L
-        const val THUMB_W = 48
-        const val THUMB_H = 24
     }
 }
 
@@ -406,6 +388,14 @@ class LiveOverlay(private val context: Context) {
 
     /** The subtitles' size: 0 small, 1 medium, 2 large. */
     var size = 1
+
+    /**
+     * Where a window lands on the screen compared with where it is put: on some Android versions below the
+     * status bar. Learned from the first box shown, so the boxes sit where they are meant to.
+     */
+    private var dx = 0
+    private var dy = 0
+    private val at = IntArray(2)
 
     /** Shows [items]; returns where their boxes are, in the screen's pixels. */
     fun show(items: List<LiveTranslator.Shown>): List<Rect> {
@@ -436,11 +426,26 @@ class LiveOverlay(private val context: Context) {
             val above = item.box.top - gap - h
             val y = if (above >= top) above else min(item.box.bottom + gap, max(top, sh - h - margin))
             val p = params[i]
-            p.x = x
-            p.y = y
+            p.x = x - dx
+            p.y = y - dy
             runCatching { wm.updateViewLayout(v, p) }
             v.visibility = View.VISIBLE
             rects += Rect(x, y, x + w, y + h)
+            // Once it has moved there: where it really is.
+            v.postDelayed({
+                if (v.visibility != View.VISIBLE || !v.isAttachedToWindow) return@postDelayed
+                v.getLocationOnScreen(at)
+                val ex = at[0] - x
+                val ey = at[1] - y
+                if (ex != 0 || ey != 0) {
+                    dx += ex
+                    dy += ey
+                    AppLog.i("live: boxes land ${dx},$dy off; put right")
+                    p.x = x - dx
+                    p.y = y - dy
+                    runCatching { wm.updateViewLayout(v, p) }
+                }
+            }, 250)
         }
         for (j in items.size until views.size) views[j].visibility = View.INVISIBLE
         return rects

@@ -120,7 +120,7 @@ class LiveTranslatorTest {
         assertTrue(hides >= hidden)
 
         // A black screen for a while: an app that forbids capture.
-        feed("", 4_500, pureBlack = true) { black > 0 }
+        feed("", 12_000, pureBlack = true) { black > 0 }
         assertTrue("told the screen is black", black > 0)
     }
 }

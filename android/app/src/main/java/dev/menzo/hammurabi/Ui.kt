@@ -86,6 +86,8 @@ object Ui {
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
+            // Placed on the screen itself, not within the status and navigation bars.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) fitInsetsTypes = 0
             // Since Android 12 touches only pass through another app's window up to this opacity.
             if (!touchable && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 alpha = (context.getSystemService(Context.INPUT_SERVICE) as InputManager).maximumObscuringOpacityForTouch
