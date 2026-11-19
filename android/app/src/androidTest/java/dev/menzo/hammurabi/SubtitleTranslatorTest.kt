@@ -25,7 +25,8 @@ class SubtitleTranslatorTest {
 
     @Test
     fun aSentenceIsShownAsHeardThenTranslated() {
-        val seen = mutableListOf<JSONObject>()
+        // Added to on the main thread, read on this one.
+        val seen = java.util.concurrent.CopyOnWriteArrayList<JSONObject>()
         val translated = CountDownLatch(1)
         val turkish = CountDownLatch(1)
         lateinit var t: SubtitleTranslator

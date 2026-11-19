@@ -269,39 +269,41 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
 
     /**
      * Whether the screen below the status bar and above the navigation bar, away from its edges (the
-     * bubble), is pure black: what an app that forbids capture (Netflix, a bank) shows. A dark scene is not
-     * pure black all over.
+     * bubble), is pure black but for a little (a toast over it): what an app that forbids capture
+     * (Netflix, a bank) shows. A dark scene is not pure black all over.
      */
     private fun black(image: Image): Boolean {
         val plane = image.planes[0]
         val buf = plane.buffer
         val stride = plane.rowStride
-        for (j in 0 until 20) {
-            val y = (image.height * (0.12f + 0.76f * j / 19)).toInt()
+        var lit = 0
+        for (j in 0 until ROWS) {
+            val y = (image.height * (0.12f + 0.76f * j / (ROWS - 1))).toInt()
             // Not the screen's edges, where the bubble sits.
-            for (i in 0 until 16) {
-                val x = (image.width * (0.15f + 0.7f * i / 15)).toInt()
+            for (i in 0 until COLUMNS) {
+                val x = (image.width * (0.15f + 0.7f * i / (COLUMNS - 1))).toInt()
                 val at = y * stride + x * 4
                 if (at + 2 >= buf.capacity()) continue
                 val r = buf.get(at).toInt() and 0xff
                 val g = buf.get(at + 1).toInt() and 0xff
                 val b = buf.get(at + 2).toInt() and 0xff
-                if (maxOf(r, g, b) > 3) return false
+                if (maxOf(r, g, b) > 3) lit++
             }
         }
-        return true
+        return lit <= ROWS * COLUMNS * LIT
     }
 
     /** Whether [bitmap] (a picture taken by [grab]) is pure black but for the status and navigation bars. */
     fun isBlack(bitmap: Bitmap): Boolean {
-        for (j in 0 until 20) {
-            val y = (bitmap.height * (0.12f + 0.76f * j / 19)).toInt().coerceIn(0, bitmap.height - 1)
-            for (i in 0 until 16) {
-                val c = bitmap.getPixel((bitmap.width * (0.15f + 0.7f * i / 15)).toInt().coerceIn(0, bitmap.width - 1), y)
-                if (maxOf(c shr 16 and 0xff, c shr 8 and 0xff, c and 0xff) > 3) return false
+        var lit = 0
+        for (j in 0 until ROWS) {
+            val y = (bitmap.height * (0.12f + 0.76f * j / (ROWS - 1))).toInt().coerceIn(0, bitmap.height - 1)
+            for (i in 0 until COLUMNS) {
+                val c = bitmap.getPixel((bitmap.width * (0.15f + 0.7f * i / (COLUMNS - 1))).toInt().coerceIn(0, bitmap.width - 1), y)
+                if (maxOf(c shr 16 and 0xff, c shr 8 and 0xff, c and 0xff) > 3) lit++
             }
         }
-        return true
+        return lit <= ROWS * COLUMNS * LIT
     }
 
     companion object {
@@ -313,6 +315,14 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
 
         /** How often live translation is told of a screen standing still. */
         const val AGAIN_MS = 900L
+
+        /**
+         * A black screen is looked for at this many points; a few lit ones (a toast, a notice of
+         * Hammurabi's own over it) still make it black.
+         */
+        private const val ROWS = 20
+        private const val COLUMNS = 16
+        private const val LIT = 0.1
 
         /** Pictures come at the screen's rate when anything moves; the bubble going is a move. */
         const val WAIT_MS = 800L

@@ -90,7 +90,7 @@ class LiveTranslatorTest {
     @Test
     fun subtitlesAreTranslatedAsTheyComeAndGo() {
         // The first one also waits for the models (downloaded once).
-        feed("Where did you put the keys?", 240_000) { shown.isNotEmpty() }
+        feed("Where did you put the keys?", 360_000) { shown.isNotEmpty() }
         assertTrue("translated: $shown", shown.isNotEmpty())
         val first = shown.last().single()
         Log.i("hammurabi-test", "live: ${first.original} → ${first.translation} at ${first.box}")
@@ -104,7 +104,8 @@ class LiveTranslatorTest {
         // A line written out letter by letter, in capitals: translated whole.
         val line = "THE CASTLE GATES ARE CLOSED. WE MUST FIND ANOTHER WAY IN."
         for (n in 6..line.length step 6) feed(line.substring(0, n), 150)
-        feed(line, 30_000) { shown.size >= 2 }
+        // A phone too slow to read twice may show a part first; the whole line comes after.
+        feed(line, 60_000) { shown.size >= 2 && shown.last().single().original == line }
         assertTrue("the whole line: $shown", shown.size >= 2)
         assertEquals(line, shown.last().single().original)
         assertTrue("hidden while it was written out", hides >= 1)

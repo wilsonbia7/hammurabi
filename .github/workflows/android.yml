@@ -111,8 +111,8 @@ jobs:
           exit $status
 
   # The on-device tests and the app as a person uses it, on an emulator of each Android version from
-  # 8 to 16: a failure shows here, with Android's log of it. x86_64 emulators run the x86_64 APK; two
-  # run the 64-bit ARM one by translation, as phones run it.
+  # 8 to 16: a failure shows here, with Android's log of it. x86_64 emulators run the x86_64 APK;
+  # Android 14's runs the 64-bit ARM one by translation, the one phones run.
   opens:
     name: Android ${{ matrix.android }} (API ${{ matrix.api }}, ${{ matrix.abi }})
     needs: apk
@@ -127,7 +127,8 @@ jobs:
           - { api: 26, android: "8.0", abi: x86_64 }
           - { api: 28, android: "9", abi: x86_64 }
           - { api: 29, android: "10", abi: x86_64 }
-          - { api: 30, android: "11", abi: arm64-v8a }
+          # Android 11's ARM translation stops ML Kit (a phone runs it natively).
+          - { api: 30, android: "11", abi: x86_64 }
           - { api: 31, android: "12", abi: x86_64 }
           - { api: 33, android: "13", abi: x86_64 }
           - { api: 34, android: "14", abi: arm64-v8a }

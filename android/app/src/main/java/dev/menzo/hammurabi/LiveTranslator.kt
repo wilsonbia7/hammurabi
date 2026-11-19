@@ -261,18 +261,38 @@ class LiveTranslator(private val context: Context, private val listener: Listene
         toldBlack = false
 
         // The screen has not changed: it reads as it did.
+        var slow = false
         val groups = if (bitmap == null) {
             if (area != lastArea) return
             lastGroups
         } else {
-            val text = Tasks.await(
-                Recognizers.get(script).process(InputImage.fromBitmap(bitmap, 0)), 10, TimeUnit.SECONDS,
-            )
+            // Read smaller: subtitles and dialogue are large text, and reading takes about half as long.
+            val scale = if (bitmap.width > READ_WIDTH) READ_WIDTH.toFloat() / bitmap.width else 1f
+            val small = if (scale < 1f) {
+                Bitmap.createScaledBitmap(bitmap, READ_WIDTH, max(1, (bitmap.height * scale).toInt()), true)
+            } else {
+                bitmap
+            }
+            val started = SystemClock.uptimeMillis()
+            val text = try {
+                Tasks.await(
+                    // Long enough for the reader's first load on a slow phone.
+                    Recognizers.get(script).process(InputImage.fromBitmap(small, 0)), 30, TimeUnit.SECONDS,
+                )
+            } finally {
+                if (small !== bitmap) small.recycle()
+            }
+            slow = SystemClock.uptimeMillis() - started > SLOW_MS
             val mine = ours
             val lines = text.textBlocks.flatMap { b ->
                 b.lines.mapNotNull { l ->
                     val box = l.boundingBox ?: return@mapNotNull null
-                    LiveText.Line(l.text, Rect(box).apply { offset(area.left, area.top) })
+                    val r = Rect(
+                        (box.left / scale).toInt(), (box.top / scale).toInt(),
+                        (box.right / scale).toInt(), (box.bottom / scale).toInt(),
+                    )
+                    r.offset(area.left, area.top)
+                    LiveText.Line(l.text, r)
                 }
             }.filter { line -> ScreenText.worthTranslating(line.text) && mine.none { mostlyIn(line.box, it) } }
             LiveText.groups(lines)
@@ -301,7 +321,9 @@ class LiveTranslator(private val context: Context, private val listener: Listene
         } else {
             if (key != lastKey) AppLog.i("live: reading \"${key.replace('\n', '|').take(120)}\"")
             lastKey = key
-            stable = 1
+            // A phone this slow reads a subtitle once while it shows: once has to do. Dialogue still being
+            // written out is translated again when it reads longer.
+            stable = if (slow) 2 else 1
         }
         if (stable < 2 || handled.isNotEmpty()) return
         translate(groups, key)
@@ -374,6 +396,12 @@ class LiveTranslator(private val context: Context, private val listener: Listene
 
     private companion object {
         const val BLACK_MS = 3_000L
+
+        /** Pictures wider than this are read at this width. */
+        const val READ_WIDTH = 720
+
+        /** A reading longer than this: the phone reads too slowly to read everything twice. */
+        const val SLOW_MS = 1_500L
     }
 }
 
