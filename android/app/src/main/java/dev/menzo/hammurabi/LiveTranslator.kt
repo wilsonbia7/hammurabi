@@ -197,6 +197,9 @@ class LiveTranslator(private val context: Context, private val listener: Listene
     private val downloaded = HashSet<String>()
     private var generation = 0
     private var readBuffer: Bitmap? = null
+
+    /** What our boxes said lately, as [LiveText.key]s, and when: their words are not read as the screen's. */
+    private val said = ArrayDeque<Pair<String, Long>>()
     private val scalePaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val maskPaint = Paint().apply { color = Color.GRAY }
 
@@ -254,6 +257,7 @@ class LiveTranslator(private val context: Context, private val listener: Listene
             handled = ""
             lastGroups = emptyList()
             lastArea = Rect()
+            said.clear()
             if (visible) hide("reset")
         }
         val now = SystemClock.uptimeMillis()
@@ -296,7 +300,9 @@ class LiveTranslator(private val context: Context, private val listener: Listene
                     r.offset(area.left, area.top)
                     LiveText.Line(l.text, r)
                 }
-            }.filter { line -> ScreenText.worthTranslating(line.text) && mine.none { mostlyIn(line.box, it) } }
+            }.filter { line ->
+                ScreenText.worthTranslating(line.text) && mine.none { mostlyIn(line.box, it) } && !ourWords(line.text)
+            }
             LiveText.groups(lines)
         }
         lastGroups = groups
@@ -329,6 +335,18 @@ class LiveTranslator(private val context: Context, private val listener: Listene
         }
         if (stable < 2 || handled.isNotEmpty()) return
         translate(groups, key)
+    }
+
+    /**
+     * A line from one of our own boxes: on a slow phone the screen's picture can still show a box just hidden,
+     * or one not yet moved to where it was put. Read with it, its words would be translated again.
+     */
+    private fun ourWords(text: String): Boolean {
+        val now = SystemClock.uptimeMillis()
+        while (said.isNotEmpty() && (now - said.first().second > SAID_MS || said.size > SAID_MAX)) said.removeFirst()
+        val k = LiveText.key(text)
+        if (k.length < 4) return false
+        return said.any { (s, _) -> s.contains(k) || LiveText.similarity(k, s) >= 0.85 }
     }
 
     /**
@@ -397,6 +415,8 @@ class LiveTranslator(private val context: Context, private val listener: Listene
         }
         handled = key
         if (items.isEmpty()) return
+        val now = SystemClock.uptimeMillis()
+        for (item in items) said.addLast(LiveText.key(item.translation) to now)
         AppLog.i("live: ${items.size} translated (${items.joinToString(" | ") { "${it.original} → ${it.translation}" }.take(300)})")
         visible = true
         val gen = ++generation
@@ -432,6 +452,10 @@ class LiveTranslator(private val context: Context, private val listener: Listene
 
         /** A reading longer than this: the phone reads too slowly to read everything twice. */
         const val SLOW_MS = 1_500L
+
+        /** How long, and how many of, our boxes' words are looked for in what is read. */
+        const val SAID_MS = 20_000L
+        const val SAID_MAX = 12
     }
 }
 
@@ -454,6 +478,28 @@ class LiveOverlay(private val context: Context) {
     private var dx = 0
     private var dy = 0
     private val at = IntArray(2)
+
+    /**
+     * Puts the first box, still hidden, where it is measured: where windows land is known before the first
+     * translation shows, which then sits where it is meant to from the start.
+     */
+    fun prepare() {
+        val v = view(0) ?: return
+        val p = params[0]
+        val y = Ui.dp(context, 100f)
+        p.x = 0
+        p.y = y
+        runCatching { wm.updateViewLayout(v, p) }
+        v.postDelayed({
+            if (!v.isAttachedToWindow || v.visibility == View.VISIBLE) return@postDelayed
+            v.getLocationOnScreen(at)
+            if (at[0] != 0 || at[1] != y) {
+                dx = at[0]
+                dy = at[1] - y
+                AppLog.i("live: boxes land $dx,$dy off; put right")
+            }
+        }, 400)
+    }
 
     /** Shows [items]; returns where their boxes are, in the screen's pixels. */
     fun show(items: List<LiveTranslator.Shown>): List<Rect> {

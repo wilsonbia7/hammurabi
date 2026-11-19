@@ -57,7 +57,12 @@ class LiveTranslatorTest {
         t.close()
     }
 
-    private fun subtitle(text: String, pureBlack: Boolean = false, box: Rect? = null): Bitmap {
+    private fun subtitle(
+        text: String,
+        pureBlack: Boolean = false,
+        box: Rect? = null,
+        boxText: String = "Şafaktan önce ayrılmak zorundayız.",
+    ): Bitmap {
         val b = Bitmap.createBitmap(1080, 1080, Bitmap.Config.ARGB_8888)
         val c = Canvas(b)
         c.drawColor(if (pureBlack) Color.BLACK else Color.rgb(40, 52, 70))
@@ -77,7 +82,7 @@ class LiveTranslatorTest {
             // Our box with the last translation, in the area's pixels.
             val r = Rect(box).apply { offset(-area.left, -area.top) }
             c.drawRect(r, Paint().apply { color = Color.rgb(20, 20, 20) })
-            c.drawText("Şafaktan önce ayrılmak zorundayız.", r.exactCenterX(), r.bottom - 16f, ink)
+            c.drawText(boxText, r.exactCenterX(), r.bottom - 16f, ink)
         }
         return b
     }
@@ -88,11 +93,12 @@ class LiveTranslatorTest {
         ms: Long,
         pureBlack: Boolean = false,
         box: Rect? = null,
+        boxText: String = "Şafaktan önce ayrılmak zorundayız.",
         until: () -> Boolean = { false },
     ) {
         val end = SystemClock.uptimeMillis() + ms
         while (SystemClock.uptimeMillis() < end && !until()) {
-            if (t.ready()) t.frame(subtitle(text, pureBlack, box), area, black = pureBlack)
+            if (t.ready()) t.frame(subtitle(text, pureBlack, box, boxText), area, black = pureBlack)
             SystemClock.sleep(120)
         }
         // The main thread's news.
@@ -138,12 +144,22 @@ class LiveTranslatorTest {
     }
 
     @Test
-    fun ourOwnBoxIsNotReadWithTheText() {
-        // The last translation's box, still just above a new subtitle until it is hidden.
+    fun ourOwnBoxesAreNotReadWithTheText() {
+        feed("Where did you put the keys?", 360_000) { shown.isNotEmpty() }
+        assertTrue("translated: $shown", shown.isNotEmpty())
+        val said = shown.last().single().translation
+
+        // Its box, still just above a new subtitle until it is hidden.
         val box = Rect(140, 1080 + 640, 940, 1080 + 705)
         t.ours = listOf(box)
-        feed("I will never forget this night.", 360_000, box = box) { shown.isNotEmpty() }
-        assertTrue("translated: $shown", shown.isNotEmpty())
+        feed("I will never forget this night.", 60_000, box = box, boxText = said) { shown.size >= 2 }
+        assertTrue("translated: $shown", shown.size >= 2)
         assertEquals("I will never forget this night.", shown.last().single().original)
+
+        // Hidden, but the screen's picture still shows it (a slow phone).
+        t.ours = emptyList()
+        feed("We have to leave before dawn.", 60_000, box = box, boxText = said) { shown.size >= 3 }
+        assertTrue("translated: $shown", shown.size >= 3)
+        assertEquals("We have to leave before dawn.", shown.last().single().original)
     }
 }

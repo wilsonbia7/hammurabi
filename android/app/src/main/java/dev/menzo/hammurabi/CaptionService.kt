@@ -384,7 +384,10 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
             return
         }
         val c = Prefs.load(this)
-        val overlay = LiveOverlay(this).also { it.size = c.textSize }
+        val overlay = LiveOverlay(this).also {
+            it.size = c.textSize
+            it.prepare()
+        }
         val t = LiveTranslator(this, object : LiveTranslator.Listener {
             override fun onShow(items: List<LiveTranslator.Shown>) {
                 if (live == null) return
