@@ -1,13 +1,16 @@
 #!/bin/sh
-# On the emulator CI starts (android.yml): the on-device tests (src/androidTest), then the app as a
+# On each emulator CI starts (android.yml): the on-device tests (src/androidTest), then the app as a
 # person uses it: started, the bubble tapped over another app, the screen translated, the menu held
-# open, stopped, and the same from the Quick Settings tile. Fails on any failure, with Android's log;
-# pictures (the subtitles, the translated screen) go in the log as JPEG/PNG in base64.
+# open, stopped; live translation over a video's subtitles and a game's dialogue, and an app that
+# forbids capture; and the Quick Settings tile. Fails on any failure, with Android's log; pictures go
+# in the log as JPEG/PNG in base64.
 set -u
 apk="$1"
 tests="$2"
 pkg=dev.menzo.hammurabi
 fail=0
+sdk=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
+echo "Android API $sdk, $(adb shell getprop ro.product.cpu.abi | tr -d '\r'), installing $apk"
 
 adb install -r "$apk" || exit 1
 adb install -r "$tests" || exit 1
@@ -35,7 +38,7 @@ adb logcat -c
 echo "---- the app as a person uses it ----"
 adb shell am force-stop "$pkg"
 adb shell input keyevent KEYCODE_HOME
-adb shell pm grant "$pkg" android.permission.POST_NOTIFICATIONS
+[ "$sdk" -ge 33 ] && adb shell pm grant "$pkg" android.permission.POST_NOTIFICATIONS
 adb shell appops set "$pkg" SYSTEM_ALERT_WINDOW allow
 # Screen sharing without its dialog, as Android's own tests do; the dialog is tapped through if it shows.
 adb shell appops set "$pkg" PROJECT_MEDIA allow
@@ -116,7 +119,7 @@ bubble() {
 }
 
 # In Turkish, as on the phone it is made for (Android 13's per-app language).
-adb shell cmd locale set-app-locales "$pkg" --locales tr-TR
+[ "$sdk" -ge 33 ] && adb shell cmd locale set-app-locales "$pkg" --locales tr-TR
 adb shell am start -W -n "$pkg/.MainActivity"
 sleep 6
 tap "resource-id=\"$pkg:id/toggle\"" || { echo "No Start button."; fail=1; }
@@ -180,7 +183,88 @@ sleep 5
 if running; then echo "Still running after Stop."; fail=1; else echo "Stopped."; fi
 adb shell dumpsys display | grep -q "Hammurabi screen" && { echo "The screen capture was left behind."; fail=1; }
 
+echo "---- live translation: a video's subtitles ----"
+adb logcat -c
+# Live translation on from the start, watching the bottom of the screen.
+cat > settings.xml <<'XML'
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="target">tr</string>
+    <boolean name="subtitles" value="false" />
+    <boolean name="live" value="true" />
+    <string name="region">BOTTOM</string>
+</map>
+XML
+adb push settings.xml /data/local/tmp/settings.xml > /dev/null
+adb shell am force-stop "$pkg"
+adb shell "run-as $pkg sh -c 'cp /data/local/tmp/settings.xml shared_prefs/settings.xml'"
+adb shell am start -W -n "$pkg/.MainActivity"
+sleep 4
+adb shell input swipe 540 600 540 2200 200
+sleep 1
+tap "resource-id=\"$pkg:id/toggle\"" || { echo "No Start button."; fail=1; }
+consent
+if seen "live: started" 30; then echo "Live translation started with Hammurabi."; else echo "Live translation did not start."; fail=1; fi
+adb logcat -c
+adb shell am start -W -n "$pkg.test/$pkg.SubtitleActivity"
+if seen "live: 1 translated (Where did you put the keys?\|live: 1 translated (We have to leave\|live: 1 translated (I will never" 120; then
+  grep "live:" logcat.txt | tail -5
+  echo "The video's subtitle was translated live."
+  sleep 1
+  shot live.png
+else
+  grep "live:" logcat.txt | tail -10
+  echo "The video's subtitle was not translated."
+  fail=1
+fi
+# The next subtitle, a few seconds later, is translated too.
+n=$(grep -c "live: 1 translated" logcat.txt)
+if seen "live: 1 translated.*\(We have to leave\|I will never\|Where did you put\)" 20 && [ "$(grep -c 'live: 1 translated' logcat.txt)" -gt "$n" ]; then
+  echo "The next subtitle was translated too."
+else
+  echo "The next subtitle was not translated."
+  fail=1
+fi
+
+echo "---- live translation: a game's dialogue, written out letter by letter ----"
+adb logcat -c
+adb shell am start -W -n "$pkg.test/$pkg.GameActivity"
+if seen "live: 1 translated (THE CASTLE GATES ARE CLOSED. WE MUST FIND ANOTHER WAY IN.\|live: 1 translated (Do you still have the map I gave you yesterday?" 90; then
+  grep "live:" logcat.txt | tail -5
+  echo "The game's dialogue was translated once it was all there."
+  sleep 1
+  shot game.png
+else
+  grep "live:" logcat.txt | tail -10
+  echo "The game's dialogue was not translated whole."
+  fail=1
+fi
+grep "live: 1 translated (" logcat.txt | grep -v "WAY IN\.\|yesterday?" | grep -q . && { echo "A part of a line was translated before it was whole."; grep "live: 1 translated (" logcat.txt; fail=1; }
+
+echo "---- an app that forbids capture ----"
+adb logcat -c
+adb shell am start -W -n "$pkg.test/$pkg.SecureActivity"
+if seen "live: the screen is black" 20; then echo "Live translation says the app forbids capture."; else echo "Live translation did not tell the black screen."; fail=1; fi
+adb logcat -d -v time > logcat.txt
+at=$(bubble)
+adb logcat -c
+[ -n "$at" ] && adb shell input tap $at
+if seen "translate: the screen is black" 20; then echo "Tapping the bubble says the app forbids capture."; else echo "Tapping the bubble did not tell the black screen."; fail=1; fi
+adb shell input keyevent KEYCODE_BACK
+sleep 1
+adb shell am start -W -n "$pkg/.MainActivity"
+sleep 2
+adb shell input swipe 540 600 540 2200 200
+adb shell input swipe 540 600 540 2200 200
+sleep 1
+tap "resource-id=\"$pkg:id/toggle\"" || { echo "No Stop button."; fail=1; }
+sleep 4
+if running; then echo "Still running after Stop."; fail=1; fi
+
 echo "---- the Quick Settings tile ----"
+if [ "$sdk" -lt 31 ]; then
+  echo "(No tile test before Android 12: its shell commands are newer.)"
+else
 adb logcat -c
 adb shell input keyevent KEYCODE_HOME
 adb shell cmd statusbar add-tile "$pkg/.CaptionTile"
@@ -201,6 +285,7 @@ if running; then echo "The tile did not stop Hammurabi."; fail=1; else echo "Sto
 adb logcat -d -v time > logcat.txt
 grep "tile:" logcat.txt
 log
+fi
 adb logcat -d -v time | grep -q "FATAL EXCEPTION.*$pkg\|Process: $pkg" && { echo "Hammurabi crashed."; fail=1; }
 echo "---- the app's own log ----"
 adb shell run-as "$pkg" cat files/log.txt | tail -80

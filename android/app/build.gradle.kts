@@ -3,19 +3,20 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val phoneAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+
 android {
     namespace = "dev.menzo.hammurabi"
     compileSdk = 36
 
     defaultConfig {
         applicationId = "dev.menzo.hammurabi"
-        // Recording other apps' audio (AudioPlaybackCapture) came in Android 10.
-        minSdk = 29
+        // Android 8, where windows over other apps got their type; other apps' sound can be heard
+        // from Android 10 (the microphone stands in before).
+        minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0"
-        // Phones of the last decade; the speech model is too slow on older 32-bit ones anyway.
-        ndk { abiFilters += listOf("arm64-v8a") }
+        versionCode = 3
+        versionName = "0.3.0"
         // The on-device tests (src/androidTest), run on an emulator in CI.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -38,6 +39,21 @@ android {
             // Signed with the debug key so test builds install; sign properly before publishing.
             signingConfig = signingConfigs.getByName("debug")
         }
+    }
+
+    // Every kind of phone: 64-bit ARM (nearly all of the last years), 32-bit ARM (older and cheaper ones)
+    // and x86_64 (emulators, Chromebooks). An APK for each, and a universal one with them all.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include(*phoneAbis.toTypedArray())
+            isUniversalApk = true
+        }
+    }
+    packaging {
+        // 32-bit x86 phones are gone; ML Kit's libraries for them would only make the APK bigger.
+        jniLibs.excludes += "lib/x86/**"
     }
 
     compileOptions {
@@ -87,12 +103,15 @@ val buildRust by tasks.registering(Exec::class) {
     group = "build"
     description = "Builds libhammurabi_android.so from android/rust with cargo-ndk."
     workingDir = rustDir
+    // For every ABI, or those of -PrustAbis=arm64-v8a,x86_64; without the engine an ABI's phones
+    // still translate the screen, but have no automatic subtitles.
+    val abis = (project.findProperty("rustAbis") as String?)?.split(',')?.map { it.trim() } ?: phoneAbis
     commandLine(
-        "cargo", "ndk",
-        "--target", "arm64-v8a",
-        "--platform", "29",
-        "--output-dir", jniLibsDir.absolutePath,
-        "build", "--release",
+        listOf("cargo", "ndk") + abis.flatMap { listOf("--target", it) } + listOf(
+            "--platform", "26",
+            "--output-dir", jniLibsDir.absolutePath,
+            "build", "--release",
+        ),
     )
 }
 

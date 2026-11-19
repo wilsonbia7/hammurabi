@@ -114,6 +114,17 @@
                     style="@style/StepText"
                     android:text="@string/howto_4" />
             </LinearLayout>
+
+            <LinearLayout style="@style/StepRow">
+
+                <TextView
+                    style="@style/Step"
+                    android:text="5" />
+
+                <TextView
+                    style="@style/StepText"
+                    android:text="@string/howto_5" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- Translation. -->
@@ -154,6 +165,52 @@
             <TextView
                 style="@style/Note"
                 android:text="@string/script_note" />
+        </LinearLayout>
+
+        <!-- Live translation. -->
+        <LinearLayout style="@style/Card">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/CardTitle"
+                        android:text="@string/live_title" />
+
+                    <TextView
+                        style="@style/Body"
+                        android:text="@string/live_note" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/live"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:contentDescription="@string/live_title"
+                    android:minHeight="48dp" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/Label"
+                android:text="@string/menu_region" />
+
+            <Spinner
+                android:id="@+id/region"
+                style="@style/Field" />
+
+            <TextView
+                style="@style/Note"
+                android:text="@string/region_note" />
         </LinearLayout>
 
         <!-- Automatic subtitles. -->
@@ -266,6 +323,31 @@
                 style="@style/SecondaryButton"
                 android:layout_marginTop="14dp"
                 android:text="@string/add_tile"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/battery"
+                style="@style/SecondaryButton"
+                android:layout_marginTop="10dp"
+                android:text="@string/battery"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/battery_note"
+                style="@style/Note"
+                android:text="@string/battery_note"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/maker_note"
+                style="@style/Note"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/app_settings"
+                style="@style/SecondaryButton"
+                android:layout_marginTop="10dp"
+                android:text="@string/app_settings"
                 android:visibility="gone" />
 
             <Button

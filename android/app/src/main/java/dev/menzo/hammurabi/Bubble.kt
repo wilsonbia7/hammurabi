@@ -70,6 +70,13 @@ class Bubble(private val context: Context, private val events: Events) {
             view.invalidate()
         }
 
+    /** Ringed while live translation runs. */
+    var live = false
+        set(value) {
+            field = value
+            view.invalidate()
+        }
+
     private val dim = Runnable { view.animate().alpha(IDLE_ALPHA).setDuration(300).start() }
 
     fun show() {
@@ -245,6 +252,8 @@ class Bubble(private val context: Context, private val events: Events) {
         override fun onDraw(canvas: Canvas) {
             val r = width / 2f
             canvas.drawCircle(r, r, r - ring.strokeWidth, circle)
+            ring.color = if (live) Ui.LIVE else 0x55ffffff
+            ring.strokeWidth = Ui.dp(context, if (live) 2.5f else 1.5f).toFloat()
             canvas.drawCircle(r, r, r - ring.strokeWidth, ring)
             val g = width * 0.25f
             canvas.drawCircle(r, r, g, globe)
@@ -337,6 +346,8 @@ class Bubble(private val context: Context, private val events: Events) {
 class BubbleMenu(private val context: Context, private val actions: Actions) {
     interface Actions {
         fun translateScreen()
+        fun setLive(on: Boolean)
+        fun setRegion(region: Region)
         fun setSubtitles(on: Boolean)
         fun setTarget(code: String)
         fun openApp()
@@ -351,7 +362,7 @@ class BubbleMenu(private val context: Context, private val actions: Actions) {
 
     val shown get() = root != null
 
-    fun show(anchor: Rect, onRight: Boolean, choices: Choices, subtitlesOn: Boolean) {
+    fun show(anchor: Rect, onRight: Boolean, choices: Choices, subtitlesOn: Boolean, liveOn: Boolean) {
         dismiss()
         this.anchor = anchor
         this.onRight = onRight
@@ -359,6 +370,17 @@ class BubbleMenu(private val context: Context, private val actions: Actions) {
         menu.addView(row(context.getString(R.string.menu_translate), null, Ui.ACCENT) {
             dismiss()
             actions.translateScreen()
+        })
+        menu.addView(row(
+            context.getString(R.string.menu_live),
+            context.getString(if (liveOn) R.string.on else R.string.off),
+            if (liveOn) Ui.LIVE else Ui.TEXT,
+        ) {
+            dismiss()
+            actions.setLive(!liveOn)
+        })
+        menu.addView(row(context.getString(R.string.menu_region), "${regionName(context, choices.region)} ›") {
+            showRegions(choices.region)
         })
         menu.addView(row(
             context.getString(R.string.menu_subtitles),
@@ -380,6 +402,19 @@ class BubbleMenu(private val context: Context, private val actions: Actions) {
         })
         attach(menu)
         AppLog.i("menu: shown")
+    }
+
+    private fun showRegions(current: Region) {
+        val menu = frame()
+        menu.addView(row("‹  ${context.getString(R.string.menu_region)}", null) { dismiss() })
+        for (r in Region.entries) {
+            val name = if (r == Region.CUSTOM) context.getString(R.string.region_draw) else regionName(context, r)
+            menu.addView(row(if (r == current) "✓  $name" else name, null, if (r == current) Ui.ACCENT else Ui.TEXT) {
+                dismiss()
+                actions.setRegion(r)
+            })
+        }
+        attach(menu)
     }
 
     private fun showLanguages(current: String) {
@@ -465,3 +500,17 @@ class BubbleMenu(private val context: Context, private val actions: Actions) {
         root = menu
     }
 }
+
+/** "Bottom of the screen", in the phone's language. */
+fun regionName(context: Context, r: Region): String = context.getString(
+    when (r) {
+        Region.BOTTOM -> R.string.region_bottom
+        Region.TOP -> R.string.region_top
+        Region.FULL -> R.string.region_full
+        Region.CUSTOM -> R.string.region_custom
+    },
+)
+
+/** The same, for the middle of a sentence: "ekranın alt kısmı". */
+fun regionPhrase(context: Context, r: Region): String =
+    regionName(context, r).replaceFirstChar { it.lowercase(java.util.Locale.getDefault()) }

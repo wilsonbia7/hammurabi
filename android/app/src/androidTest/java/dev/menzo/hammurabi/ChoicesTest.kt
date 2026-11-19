@@ -34,12 +34,22 @@ class ChoicesTest {
     fun settingsAreSavedAndLoaded() {
         val c = Choices(
             target = "de", subtitles = true, listen = Listen.MIC, spoken = "en", model = "Base",
-            textSize = 2, showOriginal = true, script = Script.JAPANESE,
+            textSize = 2, showOriginal = true, script = Script.JAPANESE, live = true, region = Region.TOP,
         )
         Prefs.save(context, c)
         assertEquals(c, Prefs.load(context))
         Prefs.save(context, Choices())
         assertEquals(Choices(), Prefs.load(context))
+    }
+
+    @Test
+    fun theWatchedAreaIsKept() {
+        assertTrue(Prefs.area(context, Region.BOTTOM).contentEquals(floatArrayOf(0f, 0.5f, 1f, 1f)))
+        Prefs.saveArea(context, floatArrayOf(0.1f, 0.6f, 0.9f, 0.8f))
+        assertTrue(Prefs.area(context, Region.CUSTOM).contentEquals(floatArrayOf(0.1f, 0.6f, 0.9f, 0.8f)))
+        // Too small to hold a line: the bottom of the screen instead.
+        Prefs.saveArea(context, floatArrayOf(0.5f, 0.5f, 0.51f, 0.505f))
+        assertTrue(Prefs.area(context, Region.CUSTOM).contentEquals(floatArrayOf(0f, 0.5f, 1f, 1f)))
     }
 
     @Test

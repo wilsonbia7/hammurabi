@@ -3,8 +3,11 @@ package dev.menzo.hammurabi
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.annotation.SuppressLint
 import android.app.StatusBarManager
+import android.content.ActivityNotFoundException
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
@@ -13,6 +16,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.Settings
 import android.view.View
 import android.widget.AdapterView
@@ -39,6 +43,8 @@ class MainActivity : Activity() {
     private lateinit var modelStatus: TextView
     private lateinit var download: Button
     private lateinit var script: Spinner
+    private lateinit var live: Switch
+    private lateinit var region: Spinner
     private lateinit var subtitles: Switch
     private lateinit var subtitleOptions: View
     private lateinit var listen: Spinner
@@ -72,7 +78,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        val content = requireViewById<View>(R.id.content)
+        val content = findViewById<View>(R.id.content)
         val pad = content.paddingLeft
         // The screen reaches under the status and navigation bars: the content keeps clear of them.
         content.setOnApplyWindowInsetsListener { v, insets ->
@@ -83,35 +89,48 @@ class MainActivity : Activity() {
             )
             insets
         }
-        stateDot = requireViewById(R.id.state_dot)
-        stateText = requireViewById(R.id.state_text)
-        stateNote = requireViewById(R.id.state_note)
-        toggle = requireViewById(R.id.toggle)
-        statusView = requireViewById(R.id.status)
-        target = requireViewById(R.id.target)
-        modelStatus = requireViewById(R.id.model_status)
-        download = requireViewById(R.id.download)
-        script = requireViewById(R.id.script)
-        subtitles = requireViewById(R.id.subtitles)
-        subtitleOptions = requireViewById(R.id.subtitle_options)
-        listen = requireViewById(R.id.listen)
-        listenNote = requireViewById(R.id.listen_note)
-        spoken = requireViewById(R.id.spoken)
-        model = requireViewById(R.id.model)
-        textSize = requireViewById(R.id.text_size)
-        showOriginal = requireViewById(R.id.show_original)
-        stats = requireViewById(R.id.stats)
-        engineNote = requireViewById(R.id.engine_note)
+        stateDot = findViewById(R.id.state_dot)
+        stateText = findViewById(R.id.state_text)
+        stateNote = findViewById(R.id.state_note)
+        toggle = findViewById(R.id.toggle)
+        statusView = findViewById(R.id.status)
+        target = findViewById(R.id.target)
+        modelStatus = findViewById(R.id.model_status)
+        download = findViewById(R.id.download)
+        script = findViewById(R.id.script)
+        live = findViewById(R.id.live)
+        region = findViewById(R.id.region)
+        subtitles = findViewById(R.id.subtitles)
+        subtitleOptions = findViewById(R.id.subtitle_options)
+        listen = findViewById(R.id.listen)
+        listenNote = findViewById(R.id.listen_note)
+        spoken = findViewById(R.id.spoken)
+        model = findViewById(R.id.model)
+        textSize = findViewById(R.id.text_size)
+        showOriginal = findViewById(R.id.show_original)
+        stats = findViewById(R.id.stats)
+        engineNote = findViewById(R.id.engine_note)
 
-        val addTile = requireViewById<Button>(R.id.add_tile)
+        val addTile = findViewById<Button>(R.id.add_tile)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             addTile.visibility = View.VISIBLE
             addTile.setOnClickListener { askToAddTile() }
         }
-        requireViewById<Button>(R.id.copy_log).setOnClickListener {
+        findViewById<Button>(R.id.battery).setOnClickListener { askBattery() }
+        findViewById<Button>(R.id.app_settings).setOnClickListener {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+        }
+        makerNote()?.let { note ->
+            findViewById<TextView>(R.id.maker_note).apply {
+                setText(note)
+                visibility = View.VISIBLE
+            }
+            findViewById<View>(R.id.app_settings).visibility = View.VISIBLE
+        }
+        findViewById<Button>(R.id.copy_log).setOnClickListener {
             Ui.copy(this, "Hammurabi", AppLog.report(this))
         }
-        requireViewById<TextView>(R.id.version).text = getString(R.string.version, versionName())
+        findViewById<TextView>(R.id.version).text = getString(R.string.version, versionName())
         download.setOnClickListener { downloadTarget() }
         toggle.setOnClickListener { onToggle() }
 
@@ -123,6 +142,7 @@ class MainActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
+        updateBattery()
         CaptionBus.add(listener)
         CaptionBus.last.values.toList().forEach { onEvent(it) }
         updateState()
@@ -159,6 +179,10 @@ class MainActivity : Activity() {
                 .map { getString(it) },
         )
         script.setSelection(c.script.ordinal)
+        live.isChecked = c.live
+        // In the order of `Region`.
+        region.adapter = adapter(Region.entries.map { regionName(this, it) })
+        region.setSelection(c.region.ordinal)
         subtitles.isChecked = c.subtitles
         // In the order of `Listen`.
         listen.adapter = adapter(listOf(getString(R.string.listen_system), getString(R.string.listen_mic)))
@@ -181,8 +205,9 @@ class MainActivity : Activity() {
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
-        listOf(target, script, listen, spoken, model, textSize).forEach { it.onItemSelectedListener = changed }
+        listOf(target, script, region, listen, spoken, model, textSize).forEach { it.onItemSelectedListener = changed }
         showOriginal.setOnCheckedChangeListener { _, _ -> onChoicesChanged() }
+        live.setOnCheckedChangeListener { _, _ -> onChoicesChanged() }
         subtitles.setOnCheckedChangeListener { _, on ->
             updateEnabled()
             if (on && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -199,6 +224,8 @@ class MainActivity : Activity() {
         return saved.copy(
             target = targets.getOrElse(target.selectedItemPosition) { saved.target },
             script = Script.entries[script.selectedItemPosition.coerceIn(0, Script.entries.size - 1)],
+            live = live.isChecked,
+            region = Region.entries[region.selectedItemPosition.coerceIn(0, Region.entries.size - 1)],
             subtitles = subtitles.isChecked,
             listen = Listen.entries[listen.selectedItemPosition.coerceIn(0, Listen.entries.size - 1)],
             spoken = spoken.selectedItemPosition.let { if (it <= 0) null else spokenLangs.getOrNull(it - 1) },
@@ -348,6 +375,32 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    /** The battery button, while battery saving may still stop Hammurabi in the background. */
+    private fun updateBattery() {
+        val power = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val saved = !power.isIgnoringBatteryOptimizations(packageName)
+        findViewById<View>(R.id.battery).visibility = if (saved) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.battery_note).visibility = if (saved) View.VISIBLE else View.GONE
+    }
+
+    @SuppressLint("BatteryLife")
+    private fun askBattery() {
+        try {
+            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+        } catch (e: ActivityNotFoundException) {
+            // Some phones have no such screen: the list of all apps instead.
+            runCatching { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+        }
+    }
+
+    /** What some phone makers' own settings need besides Android's, or null. */
+    private fun makerNote(): Int? = when (Build.MANUFACTURER.lowercase(Locale.ROOT)) {
+        "xiaomi", "redmi", "poco" -> R.string.maker_xiaomi
+        "huawei", "honor" -> R.string.maker_huawei
+        "oppo", "realme", "oneplus" -> R.string.maker_oppo
+        else -> null
     }
 
     /** Android 13: asks to put Hammurabi's tile in Quick Settings, to turn it on from any app. */

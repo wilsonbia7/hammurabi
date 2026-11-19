@@ -224,7 +224,7 @@ class TranslationLayer(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
                 fitInsetsTypes = 0
-            } else {
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
         }
@@ -243,9 +243,14 @@ class TranslationLayer(
                 ready()
             }
         }
-        view.viewTreeObserver.registerFrameCommitCallback(once)
-        // Should the commit not be told (no drawing, say), the picture is taken anyway.
-        main.postDelayed(once, 300)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            view.viewTreeObserver.registerFrameCommitCallback(once)
+            // Should the commit not be told (no drawing, say), the picture is taken anyway.
+            main.postDelayed(once, 300)
+        } else {
+            // Before Android 10 a frame's commit is not told: two frames' time, and some.
+            main.postDelayed(once, 120)
+        }
     }
 
     /** The screen as it was taken: the panel shows, and the reading starts. */

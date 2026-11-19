@@ -3,6 +3,7 @@ package dev.menzo.hammurabi
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.Image
@@ -13,6 +14,7 @@ import android.os.HandlerThread
 import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.view.Display
+import java.nio.ByteBuffer
 
 /**
  * Pictures of the whole screen, one when asked (the bubble tapped). The screen is mirrored only while one
@@ -21,6 +23,18 @@ import android.view.Display
  * even when nothing else moves. Pictures are at the screen's own size, which follows the screen as it turns.
  */
 class ScreenCapture(private val context: Context, private val projection: MediaProjection) {
+    /** Takes pictures of part of the screen while live translation runs ([live]); on the capture thread. */
+    interface LiveSink {
+        /** Not busy with the last picture. */
+        fun ready(): Boolean
+
+        /** The part of a screen of this size to take. */
+        fun area(width: Int, height: Int): Rect
+
+        /** That part, as it is now; [black]: the whole screen is black, as an app that forbids capture shows. */
+        fun frame(bitmap: Bitmap, area: Rect, black: Boolean)
+    }
+
     private val thread = HandlerThread("hm-screen").apply { start() }
     private val handler = Handler(thread.looper)
 
@@ -35,6 +49,50 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
     private var stopped = false
 
     private val sleep = Runnable { asleep() }
+
+    /** Live translation's taker and how often it takes, while it runs. */
+    private var sink: LiveSink? = null
+    private var every = 300L
+    private var lastTaken = 0L
+    private val liveTick = object : Runnable {
+        override fun run() {
+            val s = sink ?: return
+            val image = held
+            // A new picture only: the screen standing still gives none.
+            if (image != null && image.timestamp != lastTaken && s.ready()) {
+                lastTaken = image.timestamp
+                val area = s.area(image.width, image.height)
+                val bitmap = if (area.isEmpty) null else rows(image, area)
+                if (bitmap != null) s.frame(bitmap, area, black(image))
+            }
+            handler.postDelayed(this, every)
+        }
+    }
+
+    /**
+     * Live translation: the screen mirrored all along, and a new picture of [LiveSink.area] to [sink] every
+     * [everyMs] at most. Null stops it.
+     */
+    fun live(everyMs: Long, sink: LiveSink?) {
+        handler.post {
+            if (stopped) return@post
+            handler.removeCallbacks(liveTick)
+            this.sink = sink
+            every = everyMs
+            lastTaken = 0L
+            if (sink != null) {
+                open()
+                handler.removeCallbacks(this.sleep)
+                if (!awake) {
+                    awake = true
+                    synchronized(this) { reader?.let { display?.surface = it.surface } }
+                }
+                handler.post(liveTick)
+            } else {
+                asleep()
+            }
+        }
+    }
 
     /** Sets up the mirrored display, nothing mirrored onto it yet; on Android 14 there is one per sharing. */
     fun start() {
@@ -94,6 +152,8 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
             display = null
         }
         handler.post {
+            sink = null
+            handler.removeCallbacks(liveTick)
             held?.close()
             held = null
             reader?.close()
@@ -109,7 +169,8 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
 
     private fun asleep() {
         handler.removeCallbacks(sleep)
-        if (!awake) return
+        // Live translation keeps it mirrored.
+        if (!awake || sink != null) return
         awake = false
         synchronized(this) { display?.surface = null }
     }
@@ -155,16 +216,75 @@ class ScreenCapture(private val context: Context, private val projection: MediaP
         }
     }
 
-    /** The picture's RGBA rows, which may be padded past its width, as a bitmap of its size. */
-    private fun copy(image: Image): Bitmap? = try {
+    private fun copy(image: Image): Bitmap? = rows(image, Rect(0, 0, image.width, image.height))
+
+    /**
+     * [area] of the picture as a bitmap. Its RGBA rows may be padded past its width, and the last row's
+     * padding may be missing from the buffer (some phones): copied through a full-size buffer then.
+     */
+    private fun rows(image: Image, area: Rect): Bitmap? = try {
         val plane = image.planes[0]
-        val padded = plane.rowStride / plane.pixelStride
-        val full = Bitmap.createBitmap(padded, image.height, Bitmap.Config.ARGB_8888)
-        full.copyPixelsFromBuffer(plane.buffer.rewind())
-        if (padded == image.width) full else Bitmap.createBitmap(full, 0, 0, image.width, image.height).also { full.recycle() }
+        val stride = plane.rowStride
+        val padded = stride / plane.pixelStride
+        val top = area.top.coerceIn(0, image.height - 1)
+        val count = (area.bottom.coerceAtMost(image.height) - top).coerceAtLeast(1)
+        val src = plane.buffer.duplicate()
+        val from = top * stride
+        val need = count * stride
+        val bytes = if (src.capacity() - from >= need) {
+            src.position(from)
+            src.limit(from + need)
+            src.slice()
+        } else {
+            val whole = ByteBuffer.allocate(need)
+            src.position(from)
+            whole.put(src)
+            whole.rewind()
+            whole
+        }
+        val strip = Bitmap.createBitmap(padded, count, Bitmap.Config.ARGB_8888)
+        strip.copyPixelsFromBuffer(bytes)
+        val left = area.left.coerceIn(0, image.width - 1)
+        val width = (area.right.coerceAtMost(image.width) - left).coerceAtLeast(1)
+        if (left == 0 && width == padded) strip else Bitmap.createBitmap(strip, left, 0, width, count).also { strip.recycle() }
     } catch (e: RuntimeException) {
         AppLog.e("screen: picture not copied", e)
         null
+    }
+
+    /**
+     * Whether the screen below the status bar and above the navigation bar is pure black: what an app that
+     * forbids capture (Netflix, a bank) shows. A dark scene is not pure black all over.
+     */
+    private fun black(image: Image): Boolean {
+        val plane = image.planes[0]
+        val buf = plane.buffer
+        val stride = plane.rowStride
+        for (j in 0 until 20) {
+            val y = (image.height * (0.12f + 0.76f * j / 19)).toInt()
+            for (i in 0 until 16) {
+                val x = (image.width * (0.05f + 0.9f * i / 15)).toInt()
+                val at = y * stride + x * 4
+                if (at + 2 >= buf.capacity()) continue
+                val r = buf.get(at).toInt() and 0xff
+                val g = buf.get(at + 1).toInt() and 0xff
+                val b = buf.get(at + 2).toInt() and 0xff
+                if (maxOf(r, g, b) > 3) return false
+            }
+        }
+        return true
+    }
+
+    /** Whether [bitmap] (a picture taken by [grab]) is pure black but for the status and navigation bars. */
+    fun isBlack(bitmap: Bitmap): Boolean {
+        for (j in 0 until 20) {
+            val y = (bitmap.height * (0.12f + 0.76f * j / 19)).toInt().coerceIn(0, bitmap.height - 1)
+            for (i in 0 until 16) {
+                val c = bitmap.getPixel((bitmap.width * (0.05f + 0.9f * i / 15)).toInt().coerceIn(0, bitmap.width - 1), y)
+                if (maxOf(c shr 16 and 0xff, c shr 8 and 0xff, c and 0xff) > 3) return false
+            }
+        }
+        return true
     }
 
     private companion object {

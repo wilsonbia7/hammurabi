@@ -25,6 +25,9 @@ object Ui {
     const val TEXT_DIM = 0xffa9afb8.toInt()
     const val ACCENT = 0xff7aa7ff.toInt()
     const val DANGER = 0xffff8a80.toInt()
+
+    /** Live translation is on. */
+    const val LIVE = 0xff5ee38f.toInt()
     private const val RIPPLE = 0x33ffffff
 
     fun dp(context: Context, v: Float): Int =

@@ -2,9 +2,22 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application>
-        <!-- Another app's text, for CI to check the screen is read while Hammurabi is behind it. -->
+        <!-- Other apps, for CI to check Hammurabi works over them: a feed, a video with subtitles, a
+             game's dialogue, and an app that forbids capture. -->
         <activity
             android:name="dev.menzo.hammurabi.TextActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+        <activity
+            android:name="dev.menzo.hammurabi.SubtitleActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+        <activity
+            android:name="dev.menzo.hammurabi.GameActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+        <activity
+            android:name="dev.menzo.hammurabi.SecureActivity"
             android:exported="true"
             android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
     </application>

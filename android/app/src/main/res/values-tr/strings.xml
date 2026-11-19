@@ -17,8 +17,9 @@
     <string name="howto_1">Başlat\'a dokun ve Android\'in istediği izinleri ver. Ekran paylaşımında tüm ekranı seç.</string>
     <string name="howto_2">Instagram, Facebook, bir oyun ya da herhangi bir uygulamayı aç. Balona dokun: ekrandaki yazılar oldukları yerde çevrilir.</string>
     <string name="howto_3">Bir çeviriye dokunursan aslını görür, kopyalayabilirsin. Başka bir yere dokununca çeviri kapanır.</string>
-    <string name="howto_4">Menü için balona basılı tut: altyazı, dil ve kapatma burada. Balonu sürükleyerek yerini değiştirebilirsin.</string>
+    <string name="howto_4">Menü için balona basılı tut: canlı çeviri, altyazı, dil ve kapatma burada. Balonu sürükleyerek yerini değiştirebilirsin.</string>
 
+    <string name="howto_5">Video ve oyunlar için Canlı çeviri\'yi aç: altyazılar ve diyaloglar değiştikçe hemen üstlerinde çevrilir.</string>
     <!-- Çeviri. -->
     <string name="translation_title">Çeviri</string>
     <string name="label_target">Hangi dile çevrilsin?</string>
@@ -61,6 +62,12 @@
     <string name="tile_manual">Kendin ekle: hızlı ayarları aç, kalem simgesine dokun ve Hammurabi\'yi sürükleyip bırak.</string>
     <string name="tile_on">Açık</string>
     <string name="tile_off">Kapalı</string>
+    <string name="battery">Hammurabi\'yi pil tasarrufundan çıkar</string>
+    <string name="battery_note">Bazı telefonlar (Xiaomi, Huawei, Oppo, Samsung) pil için arka planda çalışan uygulamaları kapatır; bu, balonun ve canlı çevirinin kesilmemesini sağlar.</string>
+    <string name="app_settings">Hammurabi\'nin ayarlarını aç</string>
+    <string name="maker_xiaomi">Xiaomi, Redmi ve POCO telefonlarda: Hammurabi\'nin ayarlarında → Diğer izinler bölümünden \"Arka planda çalışırken açılır pencereleri göster\" ve \"Açılır pencere göster\" izinlerini aç.</string>
+    <string name="maker_huawei">Huawei ve Honor telefonlarda: Hammurabi\'nin ayarlarında → Pil → Uygulama başlatma bölümünden arka planda çalışmasına izin ver.</string>
+    <string name="maker_oppo">Oppo, Realme ve OnePlus telefonlarda: Hammurabi\'nin ayarlarında \"Diğer uygulamaların üzerinde göster\" ve arka plan etkinliğine izin ver.</string>
     <string name="copy_log">Hata kaydını kopyala</string>
     <string name="copy_log_note">Bir sorun olursa kaydı kopyalayıp geliştiriciye gönder.</string>
 
@@ -114,13 +121,33 @@
     <string name="error_model">%s çeviri modeli indirilemedi. İnternet bağlantını kontrol et.</string>
     <string name="error_translate">Çeviri yapılamadı: %s</string>
 
+    <string name="live_title">Canlı çeviri (video, oyun)</string>
+    <string name="live_note">Videolardaki altyazıları ve oyunlardaki diyalogları sürekli izler, her çeviriyi yazının hemen üstünde gösterir. Balonun menüsünden de açılıp kapanır.</string>
+    <string name="region_note">Alanı çizmek için: balona basılı tut → İzlenen alan → Alanı kendim çizeyim. Açıkken pil daha hızlı biter.</string>
+    <!-- Canlı çeviri. -->
+    <string name="menu_live">Canlı çeviri</string>
+    <string name="menu_region">İzlenen alan</string>
+    <string name="region_bottom">Ekranın alt kısmı</string>
+    <string name="region_top">Ekranın üst kısmı</string>
+    <string name="region_full">Tüm ekran</string>
+    <string name="region_custom">Çizdiğim alan</string>
+    <string name="region_draw">Alanı kendim çizeyim</string>
+    <string name="area_hint">Altyazıların ya da diyalogların çıktığı yerin üstünden parmağını sürükle.</string>
+    <string name="save">Kaydet</string>
+    <string name="live_watching">Canlı çeviri açık (%s).</string>
+    <string name="live_needs_sharing">Canlı çeviri için ekran paylaşımı gerekiyor.</string>
+    <string name="live_black">Bu uygulama ekranının görüntülenmesine izin vermiyor (Netflix ya da banka uygulamaları gibi). Canlı çeviri burayı okuyamaz; konuşma varsa otomatik altyazıyı dene.</string>
+    <string name="sound_back">Telefonun sesi yeniden duyuluyor.</string>
+
+    <string name="system_sound_old">Diğer uygulamaların sesi Android 10 ve sonrasında alınabiliyor; bu telefonda mikrofon dinler (hoparlör açık kalsın).</string>
+    <string name="error_secure">Bu uygulama ekranının görüntülenmesine izin vermiyor (Netflix ya da banka uygulamaları gibi): ekran siyah görünüyor, okunacak bir şey yok.</string>
     <!-- Altyazı çalışırken. -->
     <string name="state_loading">Hazırlanıyor…</string>
     <string name="state_running">Dinleniyor</string>
     <string name="downloading">%1$s indiriliyor: %%%2$d</string>
     <string name="downloading_size">%1$s indiriliyor: %2$d MB</string>
     <string name="loading_model">%s yükleniyor…</string>
-    <string name="silent_app">Çalan uygulama sesinin kaydedilmesine izin vermiyor. Bunun yerine ekrandaki yazılarını çevirmek için balona dokun.</string>
+    <string name="silent_app">Telefonun sesi gelmiyor (video sessiz olabilir ya da uygulama sesinin alınmasına izin vermiyor). Mikrofonla dinleniyor; hoparlör açık kalsın.</string>
 
     <!-- Bildirim ve hatalar. -->
     <string name="channel_name">Hammurabi</string>

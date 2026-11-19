@@ -46,7 +46,9 @@ class CaptionTile : TileService() {
         val tile = qsTile ?: return
         tile.state = if (on) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
         tile.label = getString(R.string.app_name)
-        tile.subtitle = getString(if (on) R.string.tile_on else R.string.tile_off)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            tile.subtitle = getString(if (on) R.string.tile_on else R.string.tile_off)
+        }
         tile.updateTile()
     }
 }

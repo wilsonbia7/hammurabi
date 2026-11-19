@@ -16,6 +16,17 @@ enum class Listen(val engineName: String) {
 /** Which letters are read off the screen. Each recognizer other than Latin's reads Latin letters too. */
 enum class Script { LATIN, CHINESE, JAPANESE, KOREAN }
 
+/** The part of the screen live translation watches, as fractions of its height. */
+enum class Region(val top: Float, val bottom: Float) {
+    /** Where films put subtitles and most games their dialogue. */
+    BOTTOM(0.5f, 1f),
+    TOP(0f, 0.5f),
+    FULL(0f, 1f),
+
+    /** Drawn by the user over the app (`RegionPicker`), kept in [Prefs.customRegion]. */
+    CUSTOM(0f, 1f),
+}
+
 /** The settings, kept between launches. */
 data class Choices(
     /** The language everything is translated into: one of ML Kit's (`Languages`). */
@@ -34,6 +45,9 @@ data class Choices(
     val script: Script = Script.LATIN,
     /** Processor cores for the speech model; 0 = the fast ones. Takes effect when the app starts again. */
     val threads: Int = 0,
+    /** Live translation: subtitles and dialogue on the screen, translated as they change. */
+    val live: Boolean = false,
+    val region: Region = Region.BOTTOM,
 ) {
     /**
      * The engine's settings (`Settings` in src/settings.rs) for automatic subtitles; fields left out keep its
@@ -79,6 +93,8 @@ object Prefs {
             showOriginal = p.getBoolean("show_original", d.showOriginal),
             script = runCatching { Script.valueOf(p.getString("script", d.script.name)!!) }.getOrDefault(d.script),
             threads = p.getInt("threads", d.threads),
+            live = p.getBoolean("live", d.live),
+            region = runCatching { Region.valueOf(p.getString("region", d.region.name)!!) }.getOrDefault(d.region),
         )
     }
 
@@ -93,6 +109,26 @@ object Prefs {
             .putBoolean("show_original", c.showOriginal)
             .putString("script", c.script.name)
             .putInt("threads", c.threads)
+            .putBoolean("live", c.live)
+            .putString("region", c.region.name)
+            .apply()
+    }
+
+    /**
+     * The area live translation watches, as fractions of the screen (left, top, right, bottom): the drawn one
+     * for [Region.CUSTOM], the whole width for the others.
+     */
+    fun area(context: Context, region: Region): FloatArray {
+        if (region != Region.CUSTOM) return floatArrayOf(0f, region.top, 1f, region.bottom)
+        val p = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val a = floatArrayOf(p.getFloat("area_l", 0f), p.getFloat("area_t", 0.5f), p.getFloat("area_r", 1f), p.getFloat("area_b", 1f))
+        // A drawn area too small to hold a line of text is not one.
+        return if (a[2] - a[0] < 0.05f || a[3] - a[1] < 0.02f) floatArrayOf(0f, 0.5f, 1f, 1f) else a
+    }
+
+    fun saveArea(context: Context, a: FloatArray) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putFloat("area_l", a[0]).putFloat("area_t", a[1]).putFloat("area_r", a[2]).putFloat("area_b", a[3])
             .apply()
     }
 

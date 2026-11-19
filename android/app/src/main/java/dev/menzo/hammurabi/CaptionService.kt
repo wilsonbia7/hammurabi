@@ -2,6 +2,7 @@ package dev.menzo.hammurabi
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.annotation.TargetApi
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -53,9 +54,19 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
     private var shot: Bitmap? = null
     private var translator: ScreenTranslator? = null
 
+    /** Live translation, while on, its boxes, and the area being drawn for it. */
+    private var live: LiveTranslator? = null
+    private var liveOverlay: LiveOverlay? = null
+    private var picker: RegionPicker? = null
+    private var toldDownloading = false
+
     /** Automatic subtitles, while on. */
     private var subtitles = false
     private val recorders = mutableListOf<Recorder>()
+
+    /** The phone's sound, and the microphone listening while that comes silent. */
+    private var systemRecorder: Recorder? = null
+    private var fallback: Recorder? = null
     private var overlay: CaptionOverlay? = null
     private var subtitleTranslator: SubtitleTranslator? = null
 
@@ -91,6 +102,10 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
         menu?.dismiss()
         capture?.resize()
         bubble?.relayout()
+        liveOverlay?.hide()
+        live?.ours = emptyList()
+        live?.reset()
+        picker?.cancel()
     }
 
     override fun onDestroy() {
@@ -120,6 +135,7 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
         menu = BubbleMenu(this, this)
         val c = Prefs.load(this)
         prepare(c)
+        if (c.live) startLive()
         if (c.subtitles) startSubtitles()
     }
 
@@ -131,8 +147,10 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
             return
         }
         bubble?.needsSharing = false
-        // Subtitles of the phone's sound stopped with the sharing.
-        if (Prefs.load(this).subtitles && !subtitles) startSubtitles()
+        // Live translation, and subtitles of the phone's sound, stopped with the sharing.
+        val c = Prefs.load(this)
+        if (c.live && live == null) startLive()
+        if (c.subtitles && !subtitles) startSubtitles()
     }
 
     /** The foreground service, with the microphone when [mic]; false when Android does not allow it now. */
@@ -142,7 +160,12 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
         val withMic = mic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
         if (withMic) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         return try {
-            startForeground(NOTIFICATION_ID, notification(), type)
+            // Types came in Android 10; before, a foreground service may use what its permissions allow.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification(), type)
+            } else {
+                startForeground(NOTIFICATION_ID, notification())
+            }
             micAllowed = mic
             true
         } catch (e: RuntimeException) {
@@ -181,6 +204,7 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
     private fun projectionEnded() {
         AppLog.i("service: screen sharing ended")
         layer?.close()
+        stopLive()
         dropProjection()
         bubble?.needsSharing = true
         if (subtitles && Prefs.load(this).listen == Listen.SYSTEM) stopSubtitles()
@@ -229,7 +253,7 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
 
     override fun onHold() {
         val b = bubble ?: return
-        menu?.show(b.bounds(), b.onRight, Prefs.load(this), subtitles)
+        menu?.show(b.bounds(), b.onRight, Prefs.load(this), subtitles, live != null)
     }
 
     // The bubble's menu.
@@ -243,6 +267,10 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
         }
         cap.wake()
         bubble?.setHidden(true)
+        // Live translation waits: its boxes are not part of what is translated.
+        live?.paused = true
+        liveOverlay?.hide()
+        live?.ours = emptyList()
         val c = Prefs.load(this)
         val l = TranslationLayer(
             this, c.target,
@@ -259,6 +287,11 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
                 }
                 if (bitmap == null) {
                     l.onError(getString(R.string.error_capture))
+                    return@grab
+                }
+                if (cap.isBlack(bitmap)) {
+                    AppLog.i("translate: the screen is black (capture forbidden)")
+                    l.onError(getString(R.string.error_secure))
                     return@grab
                 }
                 shot = bitmap
@@ -291,6 +324,109 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
         // The layer let the picture go.
         shot = null
         bubble?.setHidden(false)
+        live?.reset()
+        live?.paused = false
+    }
+
+    override fun setLive(on: Boolean) {
+        Prefs.update(this) { it.copy(live = on) }
+        if (on) startLive() else stopLive()
+    }
+
+    override fun setRegion(region: Region) {
+        if (region == Region.CUSTOM) {
+            pickArea()
+            return
+        }
+        val c = Prefs.update(this) { it.copy(region = region) }
+        applyArea(c)
+        if (live == null) setLive(true) else toast(getString(R.string.live_watching, regionPhrase(this, region)))
+    }
+
+    /** The user draws the area over the app in front. */
+    private fun pickArea() {
+        if (picker != null) return
+        menu?.dismiss()
+        live?.paused = true
+        liveOverlay?.hide()
+        bubble?.setHidden(true)
+        val start = Prefs.area(this, Prefs.load(this).region)
+        picker = RegionPicker(this, start) { area ->
+            picker = null
+            bubble?.setHidden(false)
+            live?.paused = false
+            if (area != null) {
+                Prefs.saveArea(this, area)
+                val c = Prefs.update(this) { it.copy(region = Region.CUSTOM, live = true) }
+                applyArea(c)
+                AppLog.i("live: area drawn ${area.joinToString { "%.2f".format(java.util.Locale.ROOT, it) }}")
+                if (live == null) startLive() else toast(getString(R.string.live_watching, regionPhrase(this, Region.CUSTOM)))
+            }
+        }.also { it.show() }
+    }
+
+    private fun applyArea(c: Choices) {
+        live?.let {
+            it.area = Prefs.area(this, c.region)
+            it.reset()
+        }
+        liveOverlay?.hide()
+    }
+
+    // Live translation.
+
+    private fun startLive() {
+        if (live != null || !running) return
+        val cap = capture
+        if (cap == null) {
+            toast(getString(R.string.live_needs_sharing))
+            askSharing()
+            return
+        }
+        val c = Prefs.load(this)
+        val overlay = LiveOverlay(this).also { it.size = c.textSize }
+        val t = LiveTranslator(this, object : LiveTranslator.Listener {
+            override fun onShow(items: List<LiveTranslator.Shown>) {
+                if (live == null) return
+                live?.ours = overlay.show(items)
+            }
+
+            override fun onHide() {
+                overlay.hide()
+                live?.ours = emptyList()
+            }
+
+            override fun onBlack() {
+                toast(getString(R.string.live_black))
+            }
+
+            override fun onDownloading(lang: String) {
+                if (toldDownloading) return
+                toldDownloading = true
+                toast(getString(R.string.layer_downloading, Languages.name(lang)))
+            }
+        })
+        t.target = c.target
+        t.script = c.script
+        t.area = Prefs.area(this, c.region)
+        t.skipTop = statusBarHeight()
+        live = t
+        liveOverlay = overlay
+        cap.live(LIVE_EVERY_MS, t)
+        bubble?.live = true
+        AppLog.i("live: started (${c.region}, into ${c.target})")
+        toast(getString(R.string.live_watching, regionPhrase(this, c.region)))
+    }
+
+    private fun stopLive() {
+        val t = live ?: return
+        live = null
+        capture?.live(0L, null)
+        t.close()
+        liveOverlay?.remove()
+        liveOverlay = null
+        bubble?.live = false
+        AppLog.i("live: stopped")
     }
 
     override fun setSubtitles(on: Boolean) {
@@ -301,6 +437,10 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
     override fun setTarget(code: String) {
         val c = Prefs.update(this) { it.copy(target = code) }
         subtitleTranslator?.target = code
+        live?.let {
+            it.target = code
+            it.reset()
+        }
         prepare(c)
     }
 
@@ -345,6 +485,16 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
         if (!running) return
         subtitleTranslator?.target = now.target
         overlay?.update(now)
+        liveOverlay?.size = now.textSize
+        when {
+            now.live && live == null -> startLive()
+            !now.live && live != null -> stopLive()
+            live != null && (before.region != now.region || before.target != now.target || before.script != now.script) -> {
+                live?.target = now.target
+                live?.script = now.script
+                applyArea(now)
+            }
+        }
         val restart = before.listen != now.listen || before.model != now.model || before.spoken != now.spoken
         when {
             now.subtitles && (!subtitles || restart) -> {
@@ -366,7 +516,10 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
             return
         }
         val p = projection
-        if (c.listen == Listen.SYSTEM && p == null) {
+        if (c.listen == Listen.SYSTEM && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            // Other apps' sound can be captured from Android 10; the microphone hears the loudspeaker.
+            toast(getString(R.string.system_sound_old))
+        } else if (c.listen == Listen.SYSTEM && p == null) {
             toast(getString(R.string.need_sharing_for_sound))
             askSharing()
             return
@@ -393,8 +546,9 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
     private fun startRecording(listen: Listen, p: MediaProjection?) {
         try {
             val audio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            recorders += if (listen == Listen.SYSTEM && p != null) {
-                Recorder.system(p, Silence(audio) { main.post { onSilentApp() } })
+            recorders += if (listen == Listen.SYSTEM && p != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                Recorder.system(p, Watch(audio, { main.post { onSystemSilent() } }, { main.post { onSystemAudible() } }))
+                    .also { systemRecorder = it }
             } else {
                 Recorder.microphone()
             }
@@ -428,13 +582,40 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
         }
     }
 
-    /** Something plays, yet what is heard of it is silence: the app playing does not let its sound be captured. */
-    private fun onSilentApp() {
+    /**
+     * Something plays, yet the phone's sound comes as silence: its video is muted, or the app does not let its
+     * sound be captured. The microphone listens instead, which hears the loudspeaker either way; the
+     * phone's sound is still watched, and taken back as soon as it is heard.
+     */
+    private fun onSystemSilent() {
+        if (!subtitles || fallback != null) return
+        val mic = try {
+            Recorder.microphone()
+        } catch (e: RuntimeException) {
+            AppLog.w("subtitles: no microphone to fall back on", e)
+            return
+        }
+        AppLog.i("subtitles: the phone's sound is silent while something plays; listening with the microphone")
+        systemRecorder?.feeding = false
+        fallback = mic
+        recorders += mic
+        mic.start()
+        status(getString(R.string.silent_app), "warning")
+    }
+
+    private fun onSystemAudible() {
+        val mic = fallback ?: return
+        AppLog.i("subtitles: the phone's sound is heard again")
+        fallback = null
+        recorders -= mic
+        mic.stop()
+        systemRecorder?.feeding = true
+        status(getString(R.string.sound_back), "info")
+    }
+
+    private fun status(text: String, level: String) {
         if (!subtitles) return
-        CaptionBus.emit(
-            JSONObject().put("t", "status").put("level", "warning")
-                .put("text", getString(R.string.silent_app)).put("ttl_ms", SILENT_NOTICE_MS),
-        )
+        CaptionBus.emit(JSONObject().put("t", "status").put("level", level).put("text", text).put("ttl_ms", SILENT_NOTICE_MS))
     }
 
     private fun stopSubtitles() {
@@ -445,6 +626,8 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
         generation++
         recorders.forEach { it.stop() }
         recorders.clear()
+        systemRecorder = null
+        fallback = null
         overlay?.hide()
         overlay = null
         subtitleTranslator?.close()
@@ -467,8 +650,11 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
             running = false
             AppLog.i("service: stopped")
             layer?.close()
+            picker?.cancel()
+            picker = null
             menu?.dismiss()
             menu = null
+            stopLive()
             bubble?.remove()
             bubble = null
             stopSubtitles()
@@ -564,6 +750,9 @@ class CaptionService : Service(), Bubble.Events, BubbleMenu.Actions {
         private const val FAILURE_ID = 2
         private const val SILENT_NOTICE_MS = 10_000L
 
+        /** How often live translation takes a picture: subtitles change every few seconds. */
+        private const val LIVE_EVERY_MS = 250L
+
         /** Off the main thread: models loaded and downloaded ahead, freed at the end. */
         private val warmup = Executors.newSingleThreadExecutor { r -> Thread(r, "hm-warmup") }
 
@@ -658,17 +847,25 @@ private fun Intent.parcelableExtra(name: String): Intent? =
     }
 
 /** Told once when other apps' sound stays silent while one of them plays: it does not let its sound out. */
-private class Silence(val audio: AudioManager, val tell: () -> Unit)
+/**
+ * Watches the phone's sound: [silent] when it comes as digital silence for a while though something plays,
+ * [audible] when it is heard again after that.
+ */
+private class Watch(val audio: AudioManager, val silent: () -> Unit, val audible: () -> Unit)
 
 /** One AudioRecord, read on its own thread 100 ms at a time into the engine. */
 private class Recorder(
     private val record: AudioRecord,
     private val rate: Int,
     private val system: Boolean,
-    private val silence: Silence? = null,
+    private val watch: Watch? = null,
 ) {
     @Volatile
     private var running = false
+
+    /** What is recorded goes to the engine; off while the microphone stands in. */
+    @Volatile
+    var feeding = true
     private var worker: Thread? = null
 
     fun start() {
@@ -677,7 +874,8 @@ private class Recorder(
             Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
             val buf = ShortArray(rate / 10)
             var silentMs = 0L
-            var told = false
+            var heardMs = 0L
+            var silent = false
             try {
                 record.startRecording()
                 while (running) {
@@ -686,17 +884,23 @@ private class Recorder(
                         AppLog.w("subtitles: recording stopped ($n)")
                         break
                     }
-                    if (n > 0) Native.feed(buf, n, rate, system)
-                    if (silence != null && !told && n > 0) {
-                        // An app that forbids capture is left out of what is recorded: digital silence.
-                        silentMs = if ((0 until n).all { kotlin.math.abs(buf[it].toInt()) <= 2 }) {
-                            silentMs + n * 1000L / rate
+                    if (n > 0 && feeding) Native.feed(buf, n, rate, system)
+                    if (watch != null && n > 0) {
+                        // A muted video, or an app that forbids capture: digital silence either way.
+                        val ms = n * 1000L / rate
+                        if ((0 until n).all { kotlin.math.abs(buf[it].toInt()) <= 2 }) {
+                            silentMs += ms
+                            heardMs = 0L
                         } else {
-                            0L
+                            heardMs += ms
+                            silentMs = 0L
                         }
-                        if (silentMs >= SILENT_MS && silence.audio.isMusicActive) {
-                            told = true
-                            silence.tell()
+                        if (!silent && silentMs >= SILENT_MS && watch.audio.isMusicActive) {
+                            silent = true
+                            watch.silent()
+                        } else if (silent && heardMs >= HEARD_MS) {
+                            silent = false
+                            watch.audible()
                         }
                     }
                 }
@@ -718,8 +922,11 @@ private class Recorder(
         /** The engine hears 16 kHz; other rates are resampled there. */
         private val RATES = intArrayOf(16_000, 48_000, 44_100)
 
-        /** Silence while something plays this long means its sound is not let out. */
-        private const val SILENT_MS = 6_000L
+        /** Silence while something plays this long means its sound is not let out (or it is muted). */
+        private const val SILENT_MS = 4_000L
+
+        /** Sound this long after that: the phone's sound is let out again (another app, or unmuted). */
+        private const val HEARD_MS = 600L
 
         // Both are asked for before captions start.
         @SuppressLint("MissingPermission")
@@ -733,14 +940,15 @@ private class Recorder(
         }
 
         @SuppressLint("MissingPermission")
-        fun system(projection: MediaProjection, silence: Silence): Recorder {
+        @TargetApi(Build.VERSION_CODES.Q)
+        fun system(projection: MediaProjection, watch: Watch): Recorder {
             // What apps play for people to listen to; calls and alarms stay out.
             val config = AudioPlaybackCaptureConfiguration.Builder(projection)
                 .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
                 .addMatchingUsage(AudioAttributes.USAGE_GAME)
                 .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
                 .build()
-            return open(system = true, silence) { rate ->
+            return open(system = true, watch) { rate ->
                 AudioRecord.Builder()
                     .setAudioPlaybackCaptureConfig(config)
                     .setAudioFormat(format(rate))
@@ -749,7 +957,7 @@ private class Recorder(
             }
         }
 
-        private fun open(system: Boolean, silence: Silence? = null, build: (Int) -> AudioRecord): Recorder {
+        private fun open(system: Boolean, watch: Watch? = null, build: (Int) -> AudioRecord): Recorder {
             var last: RuntimeException? = null
             for (rate in RATES) {
                 val record = try {
@@ -758,7 +966,7 @@ private class Recorder(
                     last = e
                     continue
                 }
-                if (record.state == AudioRecord.STATE_INITIALIZED) return Recorder(record, rate, system, silence)
+                if (record.state == AudioRecord.STATE_INITIALIZED) return Recorder(record, rate, system, watch)
                 record.release()
             }
             throw IllegalStateException("no recording format works here", last)
